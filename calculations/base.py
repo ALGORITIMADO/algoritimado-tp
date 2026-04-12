@@ -17,14 +17,19 @@ class IQRResult:
     method: str = ""
     pli: str = ""
 
-    def compliance_status(self) -> str:
+    def compliance_status(self, lang: str = "pt") -> str:
         if self.tested_party_value is None:
             return "N/A"
         if self.is_arms_length:
-            return "✅ Arm's Length"
-        if self.tested_party_value < self.q1:
-            return "⚠️ Below Range — Adjustment Needed"
-        return "⚠️ Above Range — Adjustment Needed"
+            return "Arm's Length" if lang == "en" else "Arm's Length"
+        if lang == "pt":
+            if self.tested_party_value < self.q1:
+                return "Abaixo do Q1 — Ajuste Necessário"
+            return "Acima do Q3 — Ajuste Necessário"
+        else:
+            if self.tested_party_value < self.q1:
+                return "Below Q1 — Adjustment Needed"
+            return "Above Q3 — Adjustment Needed"
 
     def compliance_color(self) -> str:
         if self.tested_party_value is None:
