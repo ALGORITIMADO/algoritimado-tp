@@ -6,66 +6,108 @@ from typing import Optional, List, Dict
 
 HEADERS = {"User-Agent": "Algoritimado research@algoritimado.com"}
 EDGAR_BASE = "https://data.sec.gov"
-EDGAR_SEARCH = "https://efts.sec.gov/EDGAR/search-index"
 
+# SIC_MAP: industry → list of (CIK, company_name) seed companies
 SIC_MAP = {
-    "Pharmaceutical / Farmacêutico":     ["pharmaceutical", "pharma drug"],
-    "Biotech / Biotecnologia":           ["biotechnology", "biopharmaceutical"],
-    "Agriculture / Agronegócio":         ["agricultural products", "crop production"],
-    "AgTech / Tecnologia Agrícola":      ["agricultural technology", "precision agriculture"],
-    "Food & Beverage / Alimentos":       ["food processing", "packaged foods"],
-    "Chemicals / Química":               ["specialty chemicals", "chemical manufacturing"],
-    "Oil & Gas / Petróleo e Gás":        ["oil and gas", "petroleum upstream"],
-    "Software / Tecnologia":             ["software", "cloud computing SaaS"],
-    "Medical Devices / Dispositivos":    ["medical devices", "medical equipment"],
-    "Healthcare / Saúde":                ["healthcare services", "hospital systems"],
-    "Financial Services / Financeiro":   ["financial services", "asset management"],
-    "Manufacturing / Manufatura":        ["industrial manufacturing", "machinery equipment"],
-    "Retail / Varejo":                   ["retail stores", "consumer goods retail"],
-    "Energy / Energia":                  ["electric utility", "renewable energy"],
-    "Mining / Mineração":                ["mining operations", "mineral extraction"],
-    "Logistics / Logística":             ["logistics services", "freight transportation"],
-    "Telecom / Telecomunicações":        ["telecommunications", "wireless broadband"],
+    "Pharmaceutical / Farmacêutico": [
+        (78003, "Pfizer Inc"), (310158, "Merck & Co"), (200406, "Johnson & Johnson"),
+        (1551152, "AbbVie Inc"), (14272, "Bristol-Myers Squibb"),
+        (59478, "Eli Lilly and Co"), (882095, "Gilead Sciences"),
+        (318154, "Amgen Inc"), (875320, "Biogen Inc"), (1682852, "Moderna Inc"),
+        (315966, "Abbott Laboratories"), (216346, "Baxter International"),
+    ],
+    "Biotech / Biotecnologia": [
+        (318154, "Amgen Inc"), (882095, "Gilead Sciences"), (875320, "Biogen Inc"),
+        (1682852, "Moderna Inc"), (1124140, "Regeneron Pharmaceuticals"),
+        (1403708, "Alexion Pharmaceuticals"), (1326428, "Vertex Pharmaceuticals"),
+        (1038357, "Illumina Inc"), (1117304, "BioMarin Pharmaceutical"),
+    ],
+    "Agriculture / Agronegócio": [
+        (7084, "Archer-Daniels-Midland Co"), (1144519, "Bunge Ltd"),
+        (1751788, "Corteva Inc"), (100493, "Tyson Foods"),
+        (49519, "Deere & Company"), (315189, "CF Industries"),
+        (764180, "FMC Corp"), (813672, "Mosaic Co"),
+    ],
+    "AgTech / Tecnologia Agrícola": [
+        (49519, "Deere & Company"), (764180, "FMC Corp"),
+        (1751788, "Corteva Inc"), (813672, "Mosaic Co"),
+        (315189, "CF Industries Holdings"),
+    ],
+    "Food & Beverage / Alimentos": [
+        (21344, "Coca-Cola Co"), (77476, "PepsiCo Inc"),
+        (16160, "Campbell Soup Co"), (23666, "General Mills"),
+        (40987, "Kellogg Co"), (1144519, "Bunge Ltd"),
+        (100493, "Tyson Foods Inc"), (1637459, "Kraft Heinz Co"),
+    ],
+    "Chemicals / Química": [
+        (30554, "Dow Inc"), (23632, "DuPont de Nemours"),
+        (764180, "FMC Corp"), (813672, "Mosaic Co"),
+        (1324789, "LyondellBasell Industries"), (1306965, "Celanese Corp"),
+        (28823, "Eastman Chemical"),
+    ],
+    "Oil & Gas / Petróleo e Gás": [
+        (101778, "Exxon Mobil Corp"), (93410, "Chevron Corp"),
+        (858470, "ConocoPhillips"), (1656081, "Diamondback Energy"),
+        (77159, "Phillips 66"), (1108827, "Pioneer Natural Resources"),
+    ],
+    "Software / Tecnologia": [
+        (789019, "Microsoft Corp"), (1108524, "Salesforce Inc"),
+        (1341439, "Oracle Corp"), (1108827, "ServiceNow Inc"),
+        (1467858, "Workday Inc"), (1085869, "Veeva Systems"),
+        (1393612, "Fortinet Inc"),
+    ],
+    "Medical Devices / Dispositivos": [
+        (310764, "Medtronic plc"), (319201, "Stryker Corp"),
+        (202058, "Becton Dickinson"), (1120670, "Zimmer Biomet"),
+        (1393898, "Intuitive Surgical"), (216346, "Baxter International"),
+        (1374690, "Haemonetics Corp"),
+    ],
+    "Healthcare / Saúde": [
+        (72971, "UnitedHealth Group"), (1156039, "Anthem Inc"),
+        (784977, "Humana Inc"), (1071739, "Cigna Corp"),
+        (800166, "Quest Diagnostics"), (920371, "Laboratory Corp"),
+    ],
+    "Financial Services / Financeiro": [
+        (70858, "JPMorgan Chase"), (60667, "Bank of America"),
+        (831001, "Goldman Sachs"), (895421, "Morgan Stanley"),
+        (92122, "Wells Fargo"), (19617, "Citigroup"),
+    ],
+    "Manufacturing / Manufatura": [
+        (40987, "Emerson Electric"), (66740, "Honeywell International"),
+        (40533, "General Electric"), (49196, "Illinois Tool Works"),
+        (723254, "Parker Hannifin"), (97476, "Rockwell Automation"),
+    ],
+    "Retail / Varejo": [
+        (104169, "Walmart Inc"), (1018724, "Amazon.com Inc"),
+        (1373715, "Dollar General"), (34408, "Target Corp"),
+        (86312, "Home Depot"), (1564708, "Dollar Tree"),
+    ],
+    "Energy / Energia": [
+        (1012100, "NextEra Energy"), (1013871, "Duke Energy"),
+        (1042482, "Dominion Energy"), (1043604, "Southern Co"),
+        (1004440, "Exelon Corp"), (1126234, "American Electric Power"),
+    ],
+    "Mining / Mineração": [
+        (1532187, "Freeport-McMoRan"), (1045810, "Newmont Corp"),
+        (719413, "Nucor Corp"), (101929, "Barrick Gold"),
+        (277135, "Alcoa Corp"),
+    ],
+    "Logistics / Logística": [
+        (78814, "FedEx Corp"), (100030, "United Parcel Service"),
+        (1043279, "XPO Inc"), (1308179, "Werner Enterprises"),
+        (65011, "CH Robinson Worldwide"),
+    ],
+    "Telecom / Telecomunicações": [
+        (732717, "AT&T Inc"), (101830, "Verizon Communications"),
+        (1051512, "T-Mobile US"), (1418135, "Crown Castle"),
+        (1053507, "American Tower Corp"),
+    ],
 }
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def search_edgar_filings(keyword: str, limit: int = 20) -> List[Dict]:
-    try:
-        encoded = keyword.replace(" ", "+")
-        url = (f"{EDGAR_SEARCH}?q=%22{encoded}%22&forms=10-K"
-               f"&dateRange=custom&startdt=2021-01-01&enddt=2024-12-31")
-        r = requests.get(url, headers=HEADERS, timeout=20)
-        if r.status_code != 200:
-            return []
-        data = r.json()
-        hits = data.get("hits", {}).get("hits", [])
-        results = []
-        seen_ciks = set()
-        for hit in hits:
-            src = hit.get("_source", {})
-            entity = src.get("entity_name", "")
-            entity_id = hit.get("_id", "")
-            if entity_id and "-" in entity_id:
-                cik_raw = entity_id.split("-")[0].lstrip("0")
-                if cik_raw and cik_raw.isdigit() and cik_raw not in seen_ciks:
-                    seen_ciks.add(cik_raw)
-                    results.append({
-                        "name": entity,
-                        "cik": int(cik_raw),
-                        "period": src.get("period_of_report", "2023")
-                    })
-            if len(results) >= limit:
-                break
-        return results
-    except Exception:
-        return []
 
 
 @st.cache_data(ttl=7200, show_spinner=False)
 def get_company_facts(cik: int) -> Optional[Dict]:
-    if cik <= 0:
-        return None
+    """Fetch XBRL company facts from EDGAR. Cached 2h."""
     cik_str = str(cik).zfill(10)
     url = f"{EDGAR_BASE}/api/xbrl/companyfacts/CIK{cik_str}.json"
     try:
@@ -76,11 +118,13 @@ def get_company_facts(cik: int) -> Optional[Dict]:
 
 
 def _latest_annual(gaap: Dict, fields: List[str]) -> Optional[float]:
+    """Get most recent annual 10-K/20-F value."""
     for field in fields:
         if field not in gaap:
             continue
         usd_vals = gaap[field].get("units", {}).get("USD", [])
-        annual = [u for u in usd_vals if u.get("form") in ("10-K", "20-F") and u.get("fp") == "FY"]
+        annual = [u for u in usd_vals
+                  if u.get("form") in ("10-K", "20-F") and u.get("fp") == "FY"]
         if not annual:
             annual = [u for u in usd_vals if u.get("form") in ("10-K", "20-F")]
         if annual:
@@ -92,23 +136,31 @@ def _latest_annual(gaap: Dict, fields: List[str]) -> Optional[float]:
 
 
 def extract_financials(facts: Dict) -> Optional[Dict]:
+    """Extract margins from XBRL company facts."""
     if not facts:
         return None
     gaap = facts.get("facts", {}).get("us-gaap", {})
     if not gaap:
         return None
+
     revenue = _latest_annual(gaap, [
         "Revenues",
         "RevenueFromContractWithCustomerExcludingAssessedTax",
         "RevenueFromContractWithCustomerIncludingAssessedTax",
         "SalesRevenueNet",
+        "SalesRevenueGoodsNet",
     ])
     if not revenue or revenue <= 0:
         return None
-    op_income  = _latest_annual(gaap, ["OperatingIncomeLoss"])
-    net_income = _latest_annual(gaap, ["NetIncomeLoss", "ProfitLoss"])
-    gross_profit = _latest_annual(gaap, ["GrossProfit"])
-    da = _latest_annual(gaap, ["DepreciationDepletionAndAmortization", "DepreciationAndAmortization"])
+
+    op_income   = _latest_annual(gaap, ["OperatingIncomeLoss"])
+    net_income  = _latest_annual(gaap, ["NetIncomeLoss", "ProfitLoss"])
+    gross_profit= _latest_annual(gaap, ["GrossProfit"])
+    da          = _latest_annual(gaap, [
+        "DepreciationDepletionAndAmortization",
+        "DepreciationAndAmortization",
+    ])
+
     result = {"revenue_usd": revenue}
     if op_income is not None:
         result["operating_margin"] = round(op_income / revenue * 100, 4)
@@ -128,39 +180,34 @@ def fetch_comparables_edgar(
     limit: int = 15,
     pli: str = "operating_margin"
 ) -> pd.DataFrame:
-    keywords = []
+    """
+    Fetch comparable companies from EDGAR XBRL.
+    Uses sector seed list → live XBRL financial data.
+    """
+    # Get seed companies for the industry
+    seed_companies = []
     if industry and industry in SIC_MAP:
-        keywords = SIC_MAP[industry][:2]
+        seed_companies = SIC_MAP[industry]
     elif company_name:
-        keywords = [company_name]
-    else:
-        return pd.DataFrame()
+        # Search all sectors for matching name
+        name_upper = company_name.upper()
+        for sector_companies in SIC_MAP.values():
+            for cik, name in sector_companies:
+                if name_upper in name.upper():
+                    seed_companies.append((cik, name))
 
-    all_companies = []
-    for kw in keywords:
-        companies = search_edgar_filings(kw, limit=limit * 2)
-        all_companies.extend(companies)
-        time.sleep(0.2)
-
-    seen = set()
-    unique = []
-    for c in all_companies:
-        if c["cik"] not in seen and c["cik"] > 0:
-            seen.add(c["cik"])
-            unique.append(c)
-
-    if not unique:
+    if not seed_companies:
         return pd.DataFrame()
 
     results = []
-    for company in unique[:limit * 2]:
+    for cik, default_name in seed_companies[:limit * 2]:
         if len(results) >= limit:
             break
-        facts = get_company_facts(company["cik"])
+        facts = get_company_facts(cik)
         if facts:
             fin = extract_financials(facts)
             if fin and pli in fin:
-                name = facts.get("entityName", company["name"]) or company["name"]
+                name = facts.get("entityName", default_name) or default_name
                 results.append({
                     "name": name,
                     "value": fin[pli],
@@ -170,11 +217,11 @@ def fetch_comparables_edgar(
                     "ebitda_margin": fin.get("ebitda_margin"),
                     "source": "SEC EDGAR",
                 })
-        time.sleep(0.15)
+        time.sleep(0.1)
 
     if not results:
         return pd.DataFrame()
 
     df = pd.DataFrame(results).drop_duplicates("name")
-    df = df[df["value"].between(-100, 100)]
+    df = df[df["value"].between(-200, 200)]
     return df.reset_index(drop=True)
