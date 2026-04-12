@@ -213,7 +213,7 @@ def generate_report(analysis_data: dict) -> bytes:
         if lang == "pt":
             txt = ("ARM'S LENGTH — Dentro do intervalo interquartil (Q1–Q3)"
                    if ok else
-                   "AJUSTE NECESSARIO — Fora do intervalo interquartil (Q1–Q3)")
+                   "AJUSTE NECESSÁRIO — Fora do intervalo interquartil (Q1–Q3)")
         else:
             txt = ("ARM'S LENGTH — Within the interquartile range (Q1–Q3)"
                    if ok else
@@ -263,7 +263,7 @@ def generate_report(analysis_data: dict) -> bytes:
         if iqr.tested_party_value is not None:
             tp_name = _v(analysis_data.get("tested_party_name"), "Parte Testada")
             lbl_tp = ("Parte Testada: " if lang == "pt" else "Tested Party: ") + tp_name
-            rows.append([lbl_tp, "{:.4f}".format(iqr.tested_party_value), iqr.compliance_status()])
+            rows.append([lbl_tp, "{:.4f}".format(iqr.tested_party_value), iqr.compliance_status(lang)])
 
         iqr_table = Table(rows, colWidths=[5.5*cm, 3*cm, 8.5*cm])
         ts = TableStyle([
