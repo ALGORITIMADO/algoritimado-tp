@@ -41,6 +41,92 @@ h1,h2,h3{color:#1B4332!important}
 footer{visibility:hidden}#MainMenu{visibility:hidden}
 </style>""", unsafe_allow_html=True)
 
+# ── IDENTIDADE & EVENT LOGGING ────────────────────────────────────────────────
+import json as _json
+from datetime import timezone as _tz
+
+def _log_event(event_type: str, payload: dict | None = None) -> None:
+    rec = {
+        "ts": datetime.now(_tz.utc).isoformat(),
+        "event": event_type,
+        "email": st.session_state.get("user_email", ""),
+        "domain": st.session_state.get("user_domain", ""),
+        "company": st.session_state.get("user_company", ""),
+        "source": st.session_state.get("source", ""),
+        "payload": payload or {},
+    }
+    print("[ALGORITIMADO_EVENT] " + _json.dumps(rec, ensure_ascii=False), flush=True)
+
+def _get_query_params() -> dict:
+    try:
+        qp = st.query_params
+        return {k: qp[k] for k in qp}
+    except Exception:
+        try:
+            legacy = st.experimental_get_query_params()
+            return {k: (v[0] if isinstance(v, list) and v else v) for k, v in legacy.items()}
+        except Exception:
+            return {}
+
+def _hydrate_identity_from_url() -> None:
+    if st.session_state.get("authenticated"):
+        return
+    qp = _get_query_params()
+    email = (qp.get("email") or "").strip()
+    if "@" not in email:
+        return
+    st.session_state["user_email"] = email
+    st.session_state["user_name"] = (qp.get("nome") or qp.get("name") or "").strip()
+    st.session_state["user_company"] = (qp.get("empresa") or qp.get("company") or "").strip()
+    st.session_state["user_domain"] = email.split("@", 1)[1].lower()
+    st.session_state["source"] = (qp.get("utm_source") or "landing").strip()
+    st.session_state["authenticated"] = True
+    _log_event("session_start_from_landing")
+
+def _inline_signup_form() -> None:
+    st.title("📊 Algoritimado — Transfer Pricing Intelligence")
+    st.markdown(
+        "Preencha os campos abaixo para acessar a plataforma. "
+        "Leva 30 segundos, é gratuito, e segue os requisitos da Lei 14.596/2023."
+    )
+    with st.form("signup_form", clear_on_submit=False):
+        c1, c2 = st.columns(2)
+        with c1:
+            nome = st.text_input("Nome completo *", placeholder="Ex: Maria Silva")
+            empresa = st.text_input("Empresa *", placeholder="Ex: ABC Consultoria Tributária")
+        with c2:
+            email = st.text_input("Email profissional *", placeholder="voce@empresa.com.br")
+            cargo = st.text_input("Cargo (opcional)", placeholder="Ex: Tax Manager")
+        opt_in = st.checkbox(
+            "Aceito receber comunicações da Algoritimado sobre Transfer Pricing e atualizações da plataforma.",
+            value=True,
+        )
+        submitted = st.form_submit_button(
+            "Acessar a plataforma →", type="primary", use_container_width=True
+        )
+        if submitted:
+            nome_v, email_v, empresa_v = nome.strip(), email.strip(), empresa.strip()
+            if not nome_v or "@" not in email_v or not empresa_v:
+                st.error("⚠️ Preencha nome, email válido (com @) e empresa.")
+            else:
+                st.session_state["user_email"] = email_v
+                st.session_state["user_name"] = nome_v
+                st.session_state["user_company"] = empresa_v
+                st.session_state["user_domain"] = email_v.split("@", 1)[1].lower()
+                st.session_state["user_role"] = cargo.strip()
+                st.session_state["opt_in_marketing"] = bool(opt_in)
+                st.session_state["source"] = "direct"
+                st.session_state["authenticated"] = True
+                _log_event("session_start_direct")
+                st.rerun()
+    st.stop()
+
+_hydrate_identity_from_url()
+if not st.session_state.get("authenticated"):
+    _inline_signup_form()
+
+
+
 # ── LABELS ────────────────────────────────────────────────────────────────────
 def _labels(pt):
     if pt:
@@ -378,6 +464,12 @@ if st.button(L["calc_btn"], use_container_width=True):
                 pli=pli_label_display,
                 analysis_date=datetime.now().strftime("%d/%m/%Y"),
                 language="pt" if is_pt else "en")
+            _log_event("benchmark_calculated", {
+                "method": method.split("—")[0].strip(),
+                "pli": pli_option,
+                "n_comparables": len(valid_comps),
+                "tested_value": tv,
+            })
             st.success("✅ Cálculo concluído!" if is_pt else "✅ Calculation complete!")
         except Exception as e:
             st.error(f"Erro: {e}")
@@ -468,6 +560,11 @@ if "iqr_result" in st.session_state:
         pdf_bytes = generate_report({**meta, "iqr_result": iqr, "comparables": vc,
                                       "tested_party_value": iqr.tested_party_value})
         slug = (meta.get("company_name") or "analysis").replace(" ","-").lower()
+        _log_event("pdf_generated", {
+            "method": method.split("—")[0].strip(),
+            "pli": pli_option,
+            "company": meta.get("company_name", ""),
+        })
         st.download_button(label=L["download_pdf"], data=pdf_bytes,
                            file_name=f"algoritimado-tp-{slug}-{datetime.now().strftime('%Y%m%d')}.pdf",
                            mime="application/pdf", use_container_width=True)

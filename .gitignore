@@ -1,0 +1,8 @@
+app.py.backup
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+venv/
+*.swp
+.env
