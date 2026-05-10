@@ -197,6 +197,24 @@ with c_b:
     st.markdown('<span class="gold-badge">OCDE · IN 2.161/2023</span>', unsafe_allow_html=True)
 st.divider()
 
+# Tutorial info box — como usar o app
+if is_pt:
+    st.info(
+        "**ℹ️ Como usar o app:**\n\n"
+        "**1.** Selecione o método de TP e o PLI (Indicador de Nível de Lucro)\n\n"
+        "**2.** Adicione comparáveis manualmente OU use o Auto Search (SEC EDGAR + CVM)\n\n"
+        "⚠️ *Resultados do Auto Search aparecem no final da tabela — role para baixo na seção 'Conjunto de Comparáveis' para visualizá-los*\n\n"
+        "**3.** Clique em **Calcular Intervalo Arm's Length** para gerar análise IQR e relatório PDF"
+    )
+else:
+    st.info(
+        "**ℹ️ How to use:**\n\n"
+        "**1.** Select the TP method and the PLI (Profit Level Indicator)\n\n"
+        "**2.** Add comparables manually OR use Auto Search (SEC EDGAR + CVM)\n\n"
+        "⚠️ *Auto Search results appear at the bottom of the table — scroll down to the 'Comparable Set' section to view them*\n\n"
+        "**3.** Click **Calculate Arm's Length Range** to generate IQR analysis and PDF report"
+    )
+
 # ── TRANSACTION DATA ──────────────────────────────────────────────────────────
 with st.expander(f"📋 {'Dados da Transação' if is_pt else 'Transaction Data'}", expanded=True):
     c1,c2,c3,c4 = st.columns(4)
