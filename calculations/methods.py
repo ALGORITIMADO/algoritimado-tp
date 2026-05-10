@@ -2,14 +2,14 @@ from .base import calculate_iqr, IQRResult
 from typing import Optional
 import pandas as pd
 
-# ── TNMM (Transactional Net Margin Method) / MLT ────────────────────────────
+# ── MLT — Margem Líquida da Transação (TNMM, Transactional Net Margin Method) ────
 def calculate_tnmm(comparables_df: pd.DataFrame,
                    pli_column: str,
                    tested_party_value: Optional[float] = None) -> IQRResult:
     """
-    TNMM / MLT — Método da Margem Líquida da Transação
+    MLT (TNMM) — Método da Margem Líquida da Transação
     Most widely used under IN RFB 2.161/2023 / OECD TP Guidelines.
-    PLI options: operating margin, EBITDA margin, Berry ratio, TNMM margin
+    PLI options: operating margin, EBITDA margin, Berry ratio, net margin, ROCE
     """
     values = comparables_df[pli_column].dropna().tolist()
     pli_labels = {
@@ -20,7 +20,7 @@ def calculate_tnmm(comparables_df: pd.DataFrame,
         "roce": "Return on Operating Assets (%)"
     }
     pli_label = pli_labels.get(pli_column, pli_column)
-    return calculate_iqr(values, tested_party_value, method="TNMM / MLT", pli=pli_label)
+    return calculate_iqr(values, tested_party_value, method="MLT (TNMM)", pli=pli_label)
 
 
 # ── PIC (Comparable Uncontrolled Price / CUP) ───────────────────────────────
@@ -81,16 +81,16 @@ def calculate_prl_margin_range(comparable_margins: list,
     }
 
 
-# ── MCM (Cost Plus Method / CPM) ────────────────────────────────────────────
+# ── MCL — Custo Mais Lucro (Cost Plus Method) ─────────────────────────────────
 def calculate_mcm(cost_base: float,
                   markup_pct: float) -> dict:
     """
-    MCM — Método do Custo mais Lucro
+    MCL — Método do Custo mais Lucro
     Arms length price = Cost × (1 + Markup %)
     """
     arms_length_price = cost_base * (1 + markup_pct / 100)
     return {
-        "method": "MCM / Cost Plus Method",
+        "method": "MCL (Cost Plus)",
         "cost_base": cost_base,
         "markup_pct": markup_pct,
         "arms_length_price": arms_length_price,
@@ -102,9 +102,9 @@ def calculate_mcm_markup_range(comparable_markups: list,
                                 cost_base: float,
                                 tested_party_price: Optional[float] = None) -> dict:
     """
-    MCM with IQR on comparable markups, then compute price range.
+    MCL with IQR on comparable markups, then compute price range.
     """
-    iqr = calculate_iqr(comparable_markups, method="MCM / Cost Plus Method",
+    iqr = calculate_iqr(comparable_markups, method="MCL (Cost Plus)",
                         pli="Gross Markup (%)")
     price_at_q1 = cost_base * (1 + iqr.q1 / 100)
     price_at_q3 = cost_base * (1 + iqr.q3 / 100)
@@ -120,7 +120,7 @@ def calculate_mcm_markup_range(comparable_markups: list,
         "price_range": (price_at_q1, price_at_median, price_at_q3),
         "tested_party_price": tested_party_price,
         "is_arms_length": is_arms_length,
-        "method": "MCM / Cost Plus Method"
+        "method": "MCL (Cost Plus)"
     }
 
 

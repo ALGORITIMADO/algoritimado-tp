@@ -159,12 +159,12 @@ def _labels(pt):
 
 SOURCES = ["SEC EDGAR","Brazil CVM / ITR","Annual Report","Bloomberg",
            "Refinitiv / Orbis","S&P Capital IQ","Other / Outro"]
-METHOD_OPTIONS = ["TNMM / MLT — Margem Líquida da Transação",
-                  "PIC / CUP — Preço Independente Comparável",
-                  "PRL / RPM — Preço de Revenda menos Lucro",
-                  "MCM / CPM — Custo mais Lucro",
-                  "PCI — Importação (Commodities)",
-                  "PECEX — Exportação (Commodities)"]
+METHOD_OPTIONS = ["MLT (TNMM) — Margem Líquida da Transação",
+                  "PIC (CUP) — Preço Independente Comparável",
+                  "PRL (RPM) — Preço de Revenda menos Lucro",
+                  "MCL (Cost Plus) — Custo mais Lucro",
+                  "PCI — Importação Commodities (legado · Lei 9.430/96)",
+                  "PECEX — Exportação Commodities (legado · Lei 9.430/96)"]
 PLI_OPTIONS = {"operating_margin":"Operating Margin / Margem Operacional (%)",
                "ebitda_margin":"EBITDA Margin (%)","net_margin":"Net Profit Margin (%)",
                "berry_ratio":"Berry Ratio","roce":"Return on Operating Assets / ROCE (%)"}
@@ -195,6 +195,14 @@ with c_h:
 with c_b:
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown('<span class="gold-badge">OCDE · IN 2.161/2023</span>', unsafe_allow_html=True)
+
+if any(x in method for x in ["PCI", "PECEX"]):
+    st.warning(
+        ("⚠️ **Método legado** — PCI e PECEX foram revogados pela Lei 14.596/2023 e aplicam-se apenas a exercícios fiscais até 2023. Para transações de commodities a partir de 2024, use o método **PIC**."
+         if is_pt else
+         "⚠️ **Legacy method** — PCI and PECEX were repealed by Law 14.596/2023 and apply only to fiscal years through 2023. For commodity transactions from 2024 onward, use the **PIC** method.")
+    )
+
 st.divider()
 
 # Tutorial info box — como usar o app
@@ -230,7 +238,7 @@ currency = "USD"
 resale_price_val = 100.0
 cost_base_val = 100.0
 
-if "TNMM" in method:
+if "MLT" in method:
     pli_option = st.selectbox(L["pli_label"], list(PLI_OPTIONS.keys()),
                                format_func=lambda x: PLI_OPTIONS[x])
     pli_label_display = PLI_OPTIONS[pli_option]
@@ -239,10 +247,22 @@ elif any(x in method for x in ["PIC","PCI","PECEX"]):
     pli_label_display = f"Transaction Price ({currency})"
 elif "PRL" in method:
     pli_label_display = "Gross Margin / Margem Bruta (%)"
-    resale_price_val = st.number_input(L["resale_price"], value=100.0, step=0.01, min_value=0.01)
-elif "MCM" in method:
+    pc1, pc2 = st.columns([1, 2])
+    with pc1:
+        currency = st.selectbox(L["currency"], ["BRL","USD","EUR","GBP"], key="prl_currency")
+    with pc2:
+        resale_price_val = st.number_input(
+            f"{L['resale_price']} ({currency})",
+            value=100.0, step=0.01, min_value=0.01, key="prl_resale")
+elif "MCL" in method:
     pli_label_display = "Gross Markup / Markup Bruto (%)"
-    cost_base_val = st.number_input(L["cost_base"], value=100.0, step=0.01, min_value=0.01)
+    mc1, mc2 = st.columns([1, 2])
+    with mc1:
+        currency = st.selectbox(L["currency"], ["BRL","USD","EUR","GBP"], key="mcl_currency")
+    with mc2:
+        cost_base_val = st.number_input(
+            f"{L['cost_base']} ({currency})",
+            value=100.0, step=0.01, min_value=0.01, key="mcl_cost")
 
 # ── LEVEL 2: AUTO SEARCH ─────────────────────────────────────────────────────
 ai_label = "🤖 Buscar Comparáveis Automaticamente (SEC EDGAR + CVM)" if is_pt else "🤖 Find Comparables Automatically (SEC EDGAR + CVM)"
@@ -433,11 +453,24 @@ with col_clr:
 st.divider()
 include_tested = st.checkbox(L["include_tested"], value=True)
 tested_value = None
+tested_price = None
 if include_tested:
-    tv_c, _ = st.columns([2,2])
-    with tv_c:
-        tested_value = st.number_input(f"{L['tested_value']} — {pli_label_display}",
-                                        value=0.0, step=0.0001, format="%.4f")
+    if any(x in method for x in ["PRL", "MCL"]):
+        st.markdown(f'<div style="color:#6B7280;font-size:12px;margin-bottom:.3rem">{"O teste arm\'s length oficial é da margem (Art. 39 e Art. 41 da IN RFB 2.161/2023). O preço é derivação informativa." if is_pt else "Official arm\'s length test is on the margin (Art. 39 and Art. 41 of IN RFB 2.161/2023). Price is informative derivation."}</div>', unsafe_allow_html=True)
+        tv_c1, tv_c2 = st.columns(2)
+        with tv_c1:
+            tested_value = st.number_input(
+                f"{L['tested_value']} — {pli_label_display} {('(obrigatório)' if is_pt else '(required)')}",
+                value=0.0, step=0.0001, format="%.4f", key="tv_margin")
+        with tv_c2:
+            tested_price = st.number_input(
+                f"{('Preço de Transação Realizada' if is_pt else 'Realized Transaction Price')} ({currency}) {('(opcional)' if is_pt else '(optional)')}",
+                value=0.0, step=0.0001, format="%.4f", key="tv_price")
+    else:
+        tv_c, _ = st.columns([2,2])
+        with tv_c:
+            tested_value = st.number_input(f"{L['tested_value']} — {pli_label_display}",
+                                            value=0.0, step=0.0001, format="%.4f")
 
 # ── CALCULATE ─────────────────────────────────────────────────────────────────
 st.markdown("<br>", unsafe_allow_html=True)
@@ -449,27 +482,84 @@ if st.button(L["calc_btn"], width="stretch"):
         vals = [c["value"] for c in valid_comps]
         tv = tested_value if include_tested else None
         try:
-            if "TNMM" in method:
+            if "MLT" in method:
                 df = pd.DataFrame({"name":[c["name"] for c in valid_comps], pli_option: vals})
                 iqr_result = calculate_tnmm(df, pli_option, tv)
             elif "PIC" in method:
                 iqr_result = calculate_pic(vals, tv, currency)
             elif "PRL" in method:
-                res = calculate_prl_margin_range(vals, resale_price_val, tv)
+                res = calculate_prl_margin_range(vals, resale_price_val, None)
                 iqr_result = res["iqr"]
+                iqr_result.tested_party_value = tv
                 if tv is not None:
-                    iqr_result.tested_party_value = tv
-                    iqr_result.is_arms_length = res["is_arms_length"]
-            elif "MCM" in method:
-                res = calculate_mcm_markup_range(vals, cost_base_val, tv)
+                    iqr_result.is_arms_length = (iqr_result.q1 <= tv <= iqr_result.q3)
+                    if not iqr_result.is_arms_length:
+                        iqr_result.adjustment_needed = iqr_result.median - tv
+                from calculations.base import IQRResult
+                p_q1, p_med, p_q3 = res["price_range"]
+                derived_prices = [resale_price_val * (1 - m/100) for m in vals]
+                _tp = tested_price if tested_price not in (None, 0.0) else None
+                _is_in_price_range = (p_q1 <= _tp <= p_q3) if _tp is not None else None
+                price_iqr = IQRResult(
+                    q1=p_q1, median=p_med, q3=p_q3,
+                    min_val=min(derived_prices), max_val=max(derived_prices),
+                    values=derived_prices,
+                    tested_party_value=_tp,
+                    is_arms_length=_is_in_price_range,
+                    adjustment_needed=(p_med - _tp) if (_tp is not None and _is_in_price_range is False) else None,
+                    method="PRL — Faixa de Preço Derivada (informativa)",
+                    pli=f"Preço ({currency})"
+                )
+                st.session_state["price_iqr_result"] = price_iqr
+                st.session_state["price_currency"] = currency
+                st.session_state["derived_prices_pairs"] = [
+                    {"name": c["name"] or f"C{i+1}",
+                     "margin": c["value"],
+                     "price": resale_price_val * (1 - c["value"]/100),
+                     "source": c["source"]}
+                    for i, c in enumerate(valid_comps)
+                ]
+            elif "MCL" in method:
+                res = calculate_mcm_markup_range(vals, cost_base_val, None)
                 iqr_result = res["iqr"]
+                iqr_result.tested_party_value = tv
                 if tv is not None:
-                    iqr_result.tested_party_value = tv
-                    iqr_result.is_arms_length = res["is_arms_length"]
+                    iqr_result.is_arms_length = (iqr_result.q1 <= tv <= iqr_result.q3)
+                    if not iqr_result.is_arms_length:
+                        iqr_result.adjustment_needed = iqr_result.median - tv
+                from calculations.base import IQRResult
+                p_q1, p_med, p_q3 = res["price_range"]
+                derived_prices = [cost_base_val * (1 + m/100) for m in vals]
+                _tp = tested_price if tested_price not in (None, 0.0) else None
+                _is_in_price_range = (p_q1 <= _tp <= p_q3) if _tp is not None else None
+                price_iqr = IQRResult(
+                    q1=p_q1, median=p_med, q3=p_q3,
+                    min_val=min(derived_prices), max_val=max(derived_prices),
+                    values=derived_prices,
+                    tested_party_value=_tp,
+                    is_arms_length=_is_in_price_range,
+                    adjustment_needed=(p_med - _tp) if (_tp is not None and _is_in_price_range is False) else None,
+                    method="MCL — Faixa de Preço Derivada (informativa)",
+                    pli=f"Preço ({currency})"
+                )
+                st.session_state["price_iqr_result"] = price_iqr
+                st.session_state["price_currency"] = currency
+                st.session_state["derived_prices_pairs"] = [
+                    {"name": c["name"] or f"C{i+1}",
+                     "markup": c["value"],
+                     "price": cost_base_val * (1 + c["value"]/100),
+                     "source": c["source"]}
+                    for i, c in enumerate(valid_comps)
+                ]
             elif "PCI" in method:
                 iqr_result = calculate_pci_pecex(vals, tv, "import", currency)
             else:
                 iqr_result = calculate_pci_pecex(vals, tv, "export", currency)
+
+            if not any(x in method for x in ["PRL", "MCL"]):
+                st.session_state.pop("price_iqr_result", None)
+                st.session_state.pop("derived_prices_pairs", None)
+                st.session_state.pop("price_currency", None)
 
             st.session_state["iqr_result"] = iqr_result
             st.session_state["valid_comps"] = valid_comps
@@ -482,12 +572,17 @@ if st.button(L["calc_btn"], width="stretch"):
                 pli=pli_label_display,
                 analysis_date=datetime.now().strftime("%d/%m/%Y"),
                 language="pt" if is_pt else "en")
-            _log_event("benchmark_calculated", {
+            _event_payload = {
                 "method": method.split("—")[0].strip(),
                 "pli": pli_option,
                 "n_comparables": len(valid_comps),
-                "tested_value": tv,
-            })
+            }
+            if any(x in method for x in ["PRL", "MCL"]):
+                _event_payload["tested_margin"] = tv
+                _event_payload["tested_price"] = tested_price
+            else:
+                _event_payload["tested_value"] = tv
+            _log_event("benchmark_calculated", _event_payload)
             st.success("✅ Cálculo concluído!" if is_pt else "✅ Calculation complete!")
         except Exception as e:
             st.error(f"Erro: {e}")
@@ -497,6 +592,8 @@ if "iqr_result" in st.session_state:
     iqr = st.session_state["iqr_result"]
     vc  = st.session_state["valid_comps"]
     meta= st.session_state["meta"]
+    price_iqr_state = st.session_state.get("price_iqr_result")
+    price_currency_state = st.session_state.get("price_currency", "")
 
     st.divider()
     st.markdown(f"## {L['results_title']}")
@@ -509,6 +606,10 @@ if "iqr_result" in st.session_state:
             pos = ("abaixo do Q1" if iqr.tested_party_value < iqr.q1 else "acima do Q3") if is_pt else ("below Q1" if iqr.tested_party_value < iqr.q1 else "above Q3")
             st.markdown(f'<div class="result-adj">⚠️  {"AJUSTE NECESSÁRIO" if is_pt else "ADJUSTMENT REQUIRED"} — {("Parte testada está " if is_pt else "Tested party is ")}{pos} | {"Ajuste sugerido" if is_pt else "Suggested adjustment"}: {adj:.4f}</div>', unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
+
+    if price_iqr_state is not None:
+        st.markdown(f"### {'Bloco 1 — Margens (teste arm\'s length oficial)' if is_pt else 'Block 1 — Margins (official arm\'s length test)'}")
+        st.markdown(f'<div style="color:#6B7280;font-size:13px;margin-bottom:.5rem">{"Indicador testado conforme IN RFB 2.161/2023 (Art. 39 PRL · Art. 41 MCL). O status acima é decidido por este bloco." if is_pt else "Indicator tested per IN RFB 2.161/2023 (Art. 39 PRL · Art. 41 MCL). The status above is decided by this block."}</div>', unsafe_allow_html=True)
 
     m1,m2,m3,m4 = st.columns(4)
     for col, lbl, val, sub in [
@@ -570,6 +671,78 @@ if "iqr_result" in st.session_state:
                                              f"{iqr.q3:.4f}",f"{iqr.max_val:.4f}",
                                              f"{np.std(iqr.values):.4f}",str(len(iqr.values))]}),
                      hide_index=True, width="stretch")
+
+    if price_iqr_state is not None:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"### {'Bloco 2 — Faixa de Preços Derivada (informativa)' if is_pt else 'Block 2 — Derived Price Range (informative)'}")
+        st.markdown(f'<div style="color:#6B7280;font-size:13px;margin-bottom:.5rem">{"Derivada de Preço de Revenda × (1 − margem) ou Custo × (1 + markup). Útil para precificação prospectiva — <b>não é o teste arm\'s length oficial</b>." if is_pt else "Derived from Resale × (1 − margin) or Cost × (1 + markup). Useful for prospective pricing — <b>not the official arm\'s length test</b>."}</div>', unsafe_allow_html=True)
+
+        piqr = price_iqr_state
+        cur = price_currency_state
+        dpp = st.session_state.get("derived_prices_pairs", [])
+
+        pm1, pm2, pm3, pm4 = st.columns(4)
+        for col, lbl, val, sub in [
+            (pm1, f"Q1 ({cur})", f"{piqr.q1:.4f}", "Limite inferior" if is_pt else "Lower bound"),
+            (pm2, f"Mediana ({cur})", f"{piqr.median:.4f}", "Ponto médio" if is_pt else "Midpoint"),
+            (pm3, f"Q3 ({cur})", f"{piqr.q3:.4f}", "Limite superior" if is_pt else "Upper bound"),
+            (pm4, f"IQR ({cur})", f"{piqr.q3-piqr.q1:.4f}", "Amplitude")]:
+            with col:
+                st.markdown(f'<div class="metric-card"><div class="metric-label">{lbl}</div><div class="metric-value">{val}</div><div style="font-size:11px;color:#9CA3AF">{sub}</div></div>', unsafe_allow_html=True)
+
+        if piqr.tested_party_value is not None:
+            in_range_text = ("dentro" if piqr.is_arms_length else "fora") if is_pt else ("inside" if piqr.is_arms_length else "outside")
+            color = "#16A34A" if piqr.is_arms_length else "#DC2626"
+            st.markdown(f'<div style="margin-top:.8rem;padding:.5rem .8rem;background:#F9FAFB;border-left:3px solid {color};font-size:13px;color:#374151">{"Preço realizado " if is_pt else "Realized price "}<b>{piqr.tested_party_value:.4f} {cur}</b>{" está " if is_pt else " is "}<b style="color:{color}">{in_range_text}</b>{" da faixa derivada (informativo)." if is_pt else " of the derived range (informative)."}</div>', unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        pch, ptc = st.columns([3, 2])
+
+        with pch:
+            st.markdown(f"**{'Distribuição dos Preços Derivados' if is_pt else 'Derived Prices Distribution'} ({cur})**")
+            paired_p = sorted(zip(piqr.values, [d["name"] for d in dpp]))
+            psv = [p[0] for p in paired_p]
+            psn = [p[1] for p in paired_p]
+            fig_p = go.Figure()
+            fig_p.add_shape(type="rect", x0=-0.5, x1=len(psv)-.5, y0=piqr.q1, y1=piqr.q3,
+                          fillcolor="rgba(45,106,79,.10)", line=dict(color="rgba(45,106,79,.25)", width=1))
+            for yv, lb, ds in [(piqr.q1,"Q1","dash"),(piqr.median,"Median","solid"),(piqr.q3,"Q3","dash")]:
+                fig_p.add_shape(type="line", x0=-0.5, x1=len(psv)-.5, y0=yv, y1=yv,
+                              line=dict(color="#2D6A4F", width=1.5, dash=ds))
+                fig_p.add_annotation(x=len(psv)-.4, y=yv, text=f"{lb}: {yv:.4f}", showarrow=False,
+                                   font=dict(size=10, color="#2D6A4F"), xanchor="left")
+            fig_p.add_trace(go.Scatter(x=psn, y=psv, mode="markers",
+                                      marker=dict(size=13, color="#2D6A4F", line=dict(color="white",width=2)),
+                                      name="Comparáveis", hovertemplate="<b>%{x}</b><br>%{y:.4f}<extra></extra>"))
+            if piqr.tested_party_value is not None:
+                tpc_p = "#16A34A" if piqr.is_arms_length else "#DC2626"
+                tpn_p = meta.get("tested_party_name") or "Tested Party"
+                fig_p.add_trace(go.Scatter(x=[tpn_p], y=[piqr.tested_party_value], mode="markers",
+                                          marker=dict(size=17, color=tpc_p, symbol="diamond",
+                                                      line=dict(color="white",width=2)),
+                                          name=tpn_p, hovertemplate=f"<b>{tpn_p}</b><br>{piqr.tested_party_value:.4f}<extra></extra>"))
+            fig_p.update_layout(plot_bgcolor="white", paper_bgcolor="white",
+                              font=dict(family="Inter,sans-serif",size=12,color="#374151"),
+                              xaxis=dict(showgrid=False, zeroline=False),
+                              yaxis=dict(showgrid=True, gridcolor="#F3F4F6", zeroline=False,
+                                         title=dict(text=f"Preço ({cur})",font=dict(size=11))),
+                              legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                              margin=dict(l=20,r=90,t=40,b=20), height=390)
+            st.plotly_chart(fig_p, width="stretch", key="chart_price_iqr")
+
+        with ptc:
+            st.markdown(f"**{'Comparáveis — Margem → Preço' if is_pt else 'Comparables — Margin → Price'}**")
+            mkey = "margin" if (dpp and "margin" in dpp[0]) else "markup"
+            mlabel = ("Margem %" if mkey == "margin" else "Markup %") if is_pt else ("Margin %" if mkey == "margin" else "Markup %")
+            st.dataframe(pd.DataFrame([{
+                "#": i+1,
+                ("Empresa" if is_pt else "Company"): d["name"],
+                mlabel: f"{d[mkey]:.4f}",
+                f"Preço ({cur})": f"{d['price']:.4f}",
+                ("Fonte" if is_pt else "Source"): d["source"]
+            } for i, d in enumerate(dpp)]),
+                hide_index=True, width="stretch",
+                height=min(60+len(dpp)*38, 380))
 
     st.divider()
     st.markdown(f"### {'📄 Relatório PDF' if is_pt else '📄 PDF Report'}")
