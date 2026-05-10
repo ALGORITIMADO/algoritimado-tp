@@ -188,7 +188,7 @@ def generate_report(analysis_data: dict) -> bytes:
         [_mp("Parte Testada / Tested Party", True), _mp(_v(analysis_data.get("tested_party_name"))),
          _mp("PLI", True),                     _mp(_v(analysis_data.get("pli")))],
         [_mp("Exercício Fiscal / Fiscal Year", True), _mp(_v(analysis_data.get("fiscal_year"))),
-         _mp("Legislação", True),              _mp("Lei 14.596/2023 · IN RFB 2.161/2023")],
+         _mp("Legislação", True),              _mp("Lei 9.430/1996 (legado · revogada)" if any(x in _v(analysis_data.get("method"), "") for x in ["PCI", "PECEX"]) else "Lei 14.596/2023 · IN RFB 2.161/2023")],
     ]
     meta_table = Table(meta_rows, colWidths=[4.5*cm, 5.5*cm, 3.0*cm, 4.0*cm])
     meta_table.setStyle(TableStyle([
