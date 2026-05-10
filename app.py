@@ -102,7 +102,7 @@ def _inline_signup_form() -> None:
             value=True,
         )
         submitted = st.form_submit_button(
-            "Acessar a plataforma →", type="primary", use_container_width=True
+            "Acessar a plataforma →", type="primary", width="stretch"
         )
         if submitted:
             nome_v, email_v, empresa_v = nome.strip(), email.strip(), empresa.strip()
@@ -275,7 +275,7 @@ with st.expander(ai_label, expanded=False):
 
     search_clicked = st.button(
         "🔍 Buscar Comparáveis" if is_pt else "🔍 Search Comparables",
-        key="auto_search_btn", use_container_width=True
+        key="auto_search_btn", width="stretch"
     )
 
     if search_clicked:
@@ -341,7 +341,7 @@ with st.expander(ai_label, expanded=False):
                 lambda x: f"{x:.4f}" if pd.notna(x) else "—"
             )
 
-        st.dataframe(display_df, hide_index=False, use_container_width=True,
+        st.dataframe(display_df, hide_index=False, width="stretch",
                      height=min(60 + len(res) * 38, 400))
 
         # Selection
@@ -423,7 +423,7 @@ if include_tested:
 
 # ── CALCULATE ─────────────────────────────────────────────────────────────────
 st.markdown("<br>", unsafe_allow_html=True)
-if st.button(L["calc_btn"], use_container_width=True):
+if st.button(L["calc_btn"], width="stretch"):
     valid_comps = [c for c in st.session_state.comparables if c["value"] != 0.0]
     if len(valid_comps) < 3:
         st.error("⚠️ Insira pelo menos 3 comparáveis com valores diferentes de zero." if is_pt else "⚠️ Please enter at least 3 comparables with non-zero values.")
@@ -535,7 +535,7 @@ if "iqr_result" in st.session_state:
                           margin=dict(l=20,r=90,t=40,b=20), height=390)
         fig.add_annotation(x=-0.45, y=(iqr.q1+iqr.q3)/2, text="Arm's<br>Length<br>Range",
                            showarrow=False, font=dict(size=9,color="#2D6A4F"), xanchor="right")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with tc:
         st.markdown(f"**{'Conjunto de Comparáveis' if is_pt else 'Comparable Set'}**")
@@ -543,7 +543,7 @@ if "iqr_result" in st.session_state:
                                      pli_label_display:f"{c['value']:.4f}",
                                      ("Fonte" if is_pt else "Source"):c["source"]}
                                     for i,c in enumerate(vc)]),
-                     hide_index=True, use_container_width=True,
+                     hide_index=True, width="stretch",
                      height=min(60+len(vc)*38,380))
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown(f"**{'Estatísticas' if is_pt else 'Statistics'}**")
@@ -551,7 +551,7 @@ if "iqr_result" in st.session_state:
                                     "Valor":[f"{iqr.min_val:.4f}",f"{iqr.q1:.4f}",f"{iqr.median:.4f}",
                                              f"{iqr.q3:.4f}",f"{iqr.max_val:.4f}",
                                              f"{np.std(iqr.values):.4f}",str(len(iqr.values))]}),
-                     hide_index=True, use_container_width=True)
+                     hide_index=True, width="stretch")
 
     st.divider()
     st.markdown(f"### {'📄 Relatório PDF' if is_pt else '📄 PDF Report'}")
@@ -567,7 +567,7 @@ if "iqr_result" in st.session_state:
         })
         st.download_button(label=L["download_pdf"], data=pdf_bytes,
                            file_name=f"algoritimado-tp-{slug}-{datetime.now().strftime('%Y%m%d')}.pdf",
-                           mime="application/pdf", use_container_width=True)
+                           mime="application/pdf", width="stretch")
     except Exception as e:
         st.warning(f"PDF: {e}")
 
