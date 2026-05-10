@@ -355,6 +355,9 @@ with st.expander(ai_label, expanded=False):
                 if not indices:
                     indices = list(range(min(5, len(res))))
                 added = 0
+                # UX: fill empty placeholder slots first, append only if no empties left
+                empty_indices = [i for i, c in enumerate(st.session_state.comparables) 
+                                 if c.get("name", "").strip() == ""]
                 for idx in indices:
                     if idx < len(res):
                         row = res.iloc[idx]
@@ -363,7 +366,11 @@ with st.expander(ai_label, expanded=False):
                             "value": float(row["value"]),
                             "source": row.get("source", "SEC EDGAR / CVM")
                         }
-                        st.session_state.comparables.append(new_comp)
+                        if empty_indices:
+                            slot = empty_indices.pop(0)
+                            st.session_state.comparables[slot] = new_comp
+                        else:
+                            st.session_state.comparables.append(new_comp)
                         added += 1
                 st.success(
                     f"✅ {added} comparáveis adicionados!" if is_pt
