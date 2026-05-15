@@ -101,6 +101,18 @@ def _inline_signup_form() -> None:
             "Aceito receber comunicações da Algoritimado sobre Transfer Pricing e atualizações da plataforma.",
             value=True,
         )
+        st.markdown(
+            '<div style="font-size:11px;color:#6B7280;margin-top:.6rem;line-height:1.5">'
+            'Ao acessar você concorda com a '
+            '<a href="https://algoritimado.com/policies/privacy-policy" target="_blank" style="color:#2D6A4F;font-weight:600">Política de Privacidade</a> '
+            'e os <a href="https://algoritimado.com/policies/terms-of-service" target="_blank" style="color:#2D6A4F;font-weight:600">Termos de Uso</a>. '
+            'A Algoritimado coleta seu nome, email e empresa para autenticação e comunicação relacionada à plataforma, '
+            'em conformidade com a <b>LGPD (Lei 13.709/2018)</b>. '
+            'Você pode solicitar exclusão dos seus dados a qualquer momento via '
+            '<a href="mailto:contato@algoritimado.com" style="color:#2D6A4F;font-weight:600">contato@algoritimado.com</a>.'
+            '</div>',
+            unsafe_allow_html=True
+        )
         submitted = st.form_submit_button(
             "Acessar a plataforma →", type="primary", width="stretch"
         )
@@ -267,93 +279,173 @@ elif "MCL" in method:
 # ── LEVEL 2: AUTO SEARCH ─────────────────────────────────────────────────────
 ai_label = "🤖 Buscar Comparáveis Automaticamente (SEC EDGAR + CVM)" if is_pt else "🤖 Find Comparables Automatically (SEC EDGAR + CVM)"
 with st.expander(ai_label, expanded=False):
-    st.markdown(
-        '<div class="info-box">🌐 ' +
-        ("Busca automática em bases públicas: <b>SEC EDGAR</b> (empresas abertas EUA) e <b>CVM Brasil</b> (empresas abertas BR). Selecione os comparáveis encontrados para preencher a tabela abaixo automaticamente."
-         if is_pt else
-         "Automatic search in public databases: <b>SEC EDGAR</b> (US listed companies) and <b>CVM Brasil</b> (BR listed companies). Select found comparables to auto-fill the table below.") +
-        '</div>', unsafe_allow_html=True
-    )
+    # Compatibility gate: Auto Search only honest for method+PLI combos whose data EDGAR/CVM actually return.
+    # PIC/PCI/PECEX use transaction prices (different data type); Berry Ratio/ROCE need fields neither fetcher computes.
+    _PRICE_METHODS = ("PIC", "PCI", "PECEX")
+    _UNSUPPORTED_PLIS = ("berry_ratio", "roce")
+    _method_supports = not any(x in method for x in _PRICE_METHODS)
+    _pli_supports = True
+    if "MLT" in method:
+        _pli_supports = pli_option not in _UNSUPPORTED_PLIS
 
-    ac1, ac2, ac3 = st.columns([2, 2, 1])
-    with ac1:
-        auto_industry = st.selectbox(
-            "Setor / Industry" if is_pt else "Industry / Sector",
-            ["— Select —"] + ALL_INDUSTRIES,
-            key="auto_industry"
+    # Clear stale results when method/PLI changes — markup values shouldn't display under margin labels.
+    _search_key = f"{method}|{pli_option}|{pli_label_display}"
+    if st.session_state.get("auto_results_key") != _search_key:
+        st.session_state.pop("auto_results", None)
+        st.session_state.pop("auto_results_pli_label", None)
+        st.session_state["auto_results_key"] = _search_key
+
+    if not _method_supports:
+        st.warning(
+            "⚠️ **Auto Search não aplicável a este método.**\n\n"
+            "PIC, PCI e PECEX usam preços de transação observáveis ou cotações de commodity "
+            "(fontes externas como CME, B3). SEC EDGAR e CVM Brasil fornecem dados financeiros "
+            "corporativos (margens, lucro), não preços de transação. "
+            "**Adicione os preços/cotações manualmente** na tabela abaixo."
+            if is_pt else
+            "⚠️ **Auto Search not applicable for this method.**\n\n"
+            "PIC, PCI, and PECEX use observable transaction prices or commodity quotations "
+            "(external sources like CME, B3). SEC EDGAR and CVM Brasil provide corporate "
+            "financial data (margins, profit), not transaction prices. "
+            "**Add prices/quotations manually** in the table below."
         )
-        auto_industry = None if auto_industry == "— Select —" else auto_industry
-
-    with ac2:
-        sc1, sc2 = st.columns(2)
-        with sc1:
-            auto_name_edgar = st.text_input(
-                "Nome (EDGAR)" if is_pt else "Name (EDGAR)",
-                placeholder="Ex: Pfizer",
-                key="auto_edgar_name"
-            ) or None
-        with sc2:
-            auto_name_cvm = st.text_input(
-                "Nome (CVM)" if is_pt else "Name (CVM)",
-                placeholder="Ex: EMBRAER",
-                key="auto_cvm_name"
-            ) or None
-
-    with ac3:
-        auto_sources = st.multiselect(
-            "Fontes / Sources",
-            ["SEC EDGAR", "CVM Brasil"],
-            default=["SEC EDGAR", "CVM Brasil"],
-            key="auto_sources"
+    elif not _pli_supports:
+        st.warning(
+            "⚠️ **Auto Search ainda não cobre Berry Ratio / ROCE.**\n\n"
+            "Esses PLIs requerem dados financeiros adicionais (SG&A, ativos operacionais) "
+            "que estão no roadmap (Fase 3 — NVIDIA Inception). "
+            "**Opções:** (a) Adicione comparáveis manualmente, ou (b) troque o PLI para "
+            "Operating Margin, EBITDA Margin ou Net Profit Margin (cobertos pelo Auto Search)."
+            if is_pt else
+            "⚠️ **Auto Search does not yet cover Berry Ratio / ROCE.**\n\n"
+            "These PLIs require additional financial data (SG&A, operating assets) on the "
+            "roadmap (Phase 3 — NVIDIA Inception). **Options:** (a) Add comparables manually, "
+            "or (b) switch PLI to Operating Margin, EBITDA Margin or Net Profit Margin "
+            "(covered by Auto Search)."
         )
-        auto_limit = st.number_input(
-            "Máx resultados" if is_pt else "Max results",
-            min_value=5, max_value=30, value=15, key="auto_limit"
+    else:
+        st.markdown(
+            '<div class="info-box">🌐 ' +
+            ("Busca automática em bases públicas: <b>SEC EDGAR</b> (empresas abertas EUA) e <b>CVM Brasil</b> (empresas abertas BR). Selecione os comparáveis encontrados para preencher a tabela abaixo automaticamente."
+             if is_pt else
+             "Automatic search in public databases: <b>SEC EDGAR</b> (US listed companies) and <b>CVM Brasil</b> (BR listed companies). Select found comparables to auto-fill the table below.") +
+            '</div>', unsafe_allow_html=True
         )
 
-    search_clicked = st.button(
-        "🔍 Buscar Comparáveis" if is_pt else "🔍 Search Comparables",
-        key="auto_search_btn", width="stretch"
-    )
+        # EBITDA Margin: only SEC EDGAR computes it (CVM DRE doesn't break out D&A).
+        if "MLT" in method and pli_option == "ebitda_margin":
+            st.info(
+                "ℹ️ **EBITDA Margin:** disponível apenas no SEC EDGAR no momento. "
+                "CVM Brasil não separa Depreciação/Amortização nas contas padronizadas do DRE consolidado. "
+                "Se marcar apenas 'CVM Brasil' como fonte, a busca retornará vazia."
+                if is_pt else
+                "ℹ️ **EBITDA Margin:** currently only available from SEC EDGAR. "
+                "CVM Brasil does not break out D&A in standard consolidated income statement accounts. "
+                "If you select only 'CVM Brasil' as source, the search will return empty."
+            )
 
-    if search_clicked:
-        if not auto_industry and not auto_name_edgar and not auto_name_cvm:
-            st.warning("Selecione um setor ou digite um nome para buscar." if is_pt
-                       else "Select an industry or enter a company name to search.")
-        else:
-            # Map PLI to internal field name
-            pli_field_map = {
-                PLI_OPTIONS.get("operating_margin", ""): "operating_margin",
-                PLI_OPTIONS.get("ebitda_margin", ""): "ebitda_margin",
-                PLI_OPTIONS.get("net_margin", ""): "net_margin",
-                PLI_OPTIONS.get("gross_margin", ""): "gross_margin",
-                PLI_OPTIONS.get("berry_ratio", ""): "operating_margin",
-                PLI_OPTIONS.get("roce", ""): "operating_margin",
-            }
-            search_pli = pli_field_map.get(pli_label_display, "operating_margin")
+        ac1, ac2, ac3 = st.columns([2, 2, 1])
+        with ac1:
+            auto_industry = st.selectbox(
+                "Setor / Industry" if is_pt else "Industry / Sector",
+                ["— Select —"] + ALL_INDUSTRIES,
+                key="auto_industry"
+            )
+            auto_industry = None if auto_industry == "— Select —" else auto_industry
 
-            with st.spinner("🔍 Buscando em SEC EDGAR e CVM Brasil..." if is_pt
-                           else "🔍 Searching SEC EDGAR and CVM Brasil..."):
-                results_df = find_comparables(
-                    industry=auto_industry,
-                    company_name_edgar=auto_name_edgar,
-                    company_name_cvm=auto_name_cvm,
-                    sources=auto_sources,
-                    limit=int(auto_limit),
-                    pli=search_pli
+        with ac2:
+            sc1, sc2 = st.columns(2)
+            with sc1:
+                auto_name_edgar = st.text_input(
+                    "Nome (EDGAR)" if is_pt else "Name (EDGAR)",
+                    placeholder="Ex: Pfizer",
+                    key="auto_edgar_name"
+                ) or None
+            with sc2:
+                auto_name_cvm = st.text_input(
+                    "Nome (CVM)" if is_pt else "Name (CVM)",
+                    placeholder="Ex: EMBRAER",
+                    key="auto_cvm_name"
+                ) or None
+
+        with ac3:
+            auto_sources = st.multiselect(
+                "Fontes / Sources",
+                ["SEC EDGAR", "CVM Brasil"],
+                default=["SEC EDGAR", "CVM Brasil"],
+                key="auto_sources"
+            )
+            auto_limit = st.number_input(
+                "Máx resultados" if is_pt else "Max results",
+                min_value=5, max_value=30, value=15, key="auto_limit"
+            )
+
+        search_clicked = st.button(
+            "🔍 Buscar Comparáveis" if is_pt else "🔍 Search Comparables",
+            key="auto_search_btn", width="stretch"
+        )
+
+        if search_clicked:
+            # Session-level rate limit: 5 searches per 60s. Protects against SEC EDGAR User-Agent ban
+            # (EDGAR enforces ~10 req/sec total — concurrent abuse breaks Auto Search for everyone).
+            _now_ts = datetime.now().timestamp()
+            _clicks = [t for t in st.session_state.get("auto_search_clicks", []) if _now_ts - t < 60]
+            if len(_clicks) >= 5:
+                st.error(
+                    "⚠️ Limite de **5 buscas por minuto** atingido (proteção contra abuso das APIs públicas SEC EDGAR e CVM). Aguarde alguns segundos e tente novamente."
+                    if is_pt else
+                    "⚠️ Rate limit: **5 searches per minute** (public API abuse protection for SEC EDGAR and CVM). Wait a few seconds and try again."
                 )
-
-            if results_df.empty:
-                st.warning(
-                    "Nenhum comparável encontrado. Tente outro setor ou nome." if is_pt
-                    else "No comparables found. Try a different industry or name."
-                )
+            elif not auto_industry and not auto_name_edgar and not auto_name_cvm:
+                st.warning("Selecione um setor ou digite um nome para buscar." if is_pt
+                           else "Select an industry or enter a company name to search.")
             else:
-                st.session_state["auto_results"] = results_df
-                st.success(
-                    f"✅ {len(results_df)} comparáveis encontrados!" if is_pt
-                    else f"✅ {len(results_df)} comparables found!"
-                )
+                _clicks.append(_now_ts)
+                st.session_state["auto_search_clicks"] = _clicks
+
+                # Map pli_label_display → fetcher field. Only PLIs whose data exists in EDGAR/CVM
+                # (see extract_financials in edgar_fetcher.py and calculate_margins_cvm in cvm_fetcher.py).
+                SUPPORTED_PLI_LABEL_MAP = {
+                    PLI_OPTIONS["operating_margin"]: "operating_margin",
+                    PLI_OPTIONS["ebitda_margin"]: "ebitda_margin",
+                    PLI_OPTIONS["net_margin"]: "net_margin",
+                    "Gross Margin / Margem Bruta (%)": "gross_margin",    # PRL
+                    "Gross Markup / Markup Bruto (%)": "gross_margin",    # MCL — derived below
+                }
+                search_pli = SUPPORTED_PLI_LABEL_MAP.get(pli_label_display, "operating_margin")
+
+                with st.spinner("🔍 Buscando em SEC EDGAR e CVM Brasil..." if is_pt
+                               else "🔍 Searching SEC EDGAR and CVM Brasil..."):
+                    results_df = find_comparables(
+                        industry=auto_industry,
+                        company_name_edgar=auto_name_edgar,
+                        company_name_cvm=auto_name_cvm,
+                        sources=auto_sources,
+                        limit=int(auto_limit),
+                        pli=search_pli
+                    )
+
+                # MCL: derive Gross Markup from Gross Margin (algebraic identity).
+                # revenue = cost + gross_profit ⇒ markup_pct = gm_pct / (100 - gm_pct) * 100
+                if "MCL" in method and not results_df.empty and "value" in results_df.columns:
+                    results_df["value"] = results_df["value"].apply(
+                        lambda gm: round(gm / (100 - gm) * 100, 4)
+                        if pd.notna(gm) and gm < 100 else None
+                    )
+                    results_df = results_df.dropna(subset=["value"]).reset_index(drop=True)
+
+                if results_df.empty:
+                    st.warning(
+                        "Nenhum comparável encontrado. Tente outro setor ou nome." if is_pt
+                        else "No comparables found. Try a different industry or name."
+                    )
+                else:
+                    st.session_state["auto_results"] = results_df
+                    st.session_state["auto_results_pli_label"] = pli_label_display
+                    st.success(
+                        f"✅ {len(results_df)} comparáveis encontrados!" if is_pt
+                        else f"✅ {len(results_df)} comparables found!"
+                    )
 
     # Show results and selection
     if "auto_results" in st.session_state and not st.session_state["auto_results"].empty:
@@ -365,12 +457,14 @@ with st.expander(ai_label, expanded=False):
         if "operating_margin" in res.columns:
             display_cols = ["name", "value", "operating_margin", "net_margin", "gross_margin", "source"]
         display_df = res[[c for c in display_cols if c in res.columns]].copy()
+        # Show the actual PLI name in the column header (was generic "PLI Selecionado", which masked which value was being shown)
+        _displayed_pli = st.session_state.get("auto_results_pli_label", pli_label_display)
         display_df.columns = (
-            ["Empresa", "PLI Selecionado", "Mg. Operacional (%)", "Mg. Líquida (%)", "Mg. Bruta (%)", "Fonte"]
+            ["Empresa", _displayed_pli, "Mg. Operacional (%)", "Mg. Líquida (%)", "Mg. Bruta (%)", "Fonte"]
             if is_pt and len(display_df.columns) == 6 else
-            ["Company", "Selected PLI", "Op. Margin (%)", "Net Margin (%)", "Gross Margin (%)", "Source"]
+            ["Company", _displayed_pli, "Op. Margin (%)", "Net Margin (%)", "Gross Margin (%)", "Source"]
             if len(display_df.columns) == 6 else
-            ["Empresa/Company", "PLI", "Fonte/Source"]
+            ["Empresa/Company", _displayed_pli, "Fonte/Source"]
         )
 
         # Format numbers
@@ -477,8 +571,21 @@ st.markdown("<br>", unsafe_allow_html=True)
 if st.button(L["calc_btn"], width="stretch"):
     valid_comps = [c for c in st.session_state.comparables if c["value"] != 0.0]
     if len(valid_comps) < 3:
-        st.error("⚠️ Insira pelo menos 3 comparáveis com valores diferentes de zero." if is_pt else "⚠️ Please enter at least 3 comparables with non-zero values.")
+        st.error("⚠️ Insira pelo menos 3 comparáveis com valores diferentes de zero (mínimo absoluto para cálculo do IQR)." if is_pt else "⚠️ Please enter at least 3 comparables with non-zero values (minimum for IQR calculation).")
     else:
+        # IN RFB 2.161/2023 recomenda preferencialmente 5+ comparáveis. Calcula com 3-4 mas avisa.
+        if 3 <= len(valid_comps) < 5:
+            st.warning(
+                f"⚠️ **Apenas {len(valid_comps)} comparáveis informados.** "
+                f"A IN RFB 2.161/2023 recomenda preferencialmente **5 ou mais comparáveis** para garantir robustez estatística do intervalo arm's length. "
+                f"O cálculo prosseguirá com {len(valid_comps)} comparáveis, mas a robustez estatística e a defensibilidade legal do resultado podem ser reduzidas. "
+                f"Considere adicionar mais comparáveis antes de usar este resultado em documentação oficial."
+                if is_pt else
+                f"⚠️ **Only {len(valid_comps)} comparables provided.** "
+                f"IN RFB 2.161/2023 preferably requires **5+ comparables** for statistical robustness of the arm's length range. "
+                f"Calculation will proceed with {len(valid_comps)} comparables, but statistical robustness and legal defensibility may be reduced. "
+                f"Consider adding more comparables before using this result in official documentation."
+            )
         vals = [c["value"] for c in valid_comps]
         tv = tested_value if include_tested else None
         try:
