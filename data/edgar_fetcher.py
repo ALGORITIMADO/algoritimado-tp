@@ -118,7 +118,13 @@ def get_company_facts(cik: int) -> Optional[Dict]:
 
 
 def _latest_annual(gaap: Dict, fields: List[str]) -> Optional[float]:
-    """Get most recent annual 10-K/20-F value."""
+    """Get most recent annual 10-K/20-F value across ALL listed fields.
+
+    Scans every field and returns the value with the latest end_date — companies
+    that migrated to ASC 606 fields often leave legacy fields (Revenues, GrossProfit)
+    frozen at 2020 data, so iterating field-by-field would return stale values.
+    """
+    best = None
     for field in fields:
         if field not in gaap:
             continue
@@ -127,12 +133,18 @@ def _latest_annual(gaap: Dict, fields: List[str]) -> Optional[float]:
                   if u.get("form") in ("10-K", "20-F") and u.get("fp") == "FY"]
         if not annual:
             annual = [u for u in usd_vals if u.get("form") in ("10-K", "20-F")]
-        if annual:
-            annual.sort(key=lambda x: x.get("end", ""), reverse=True)
-            val = annual[0].get("val")
-            if val is not None and val != 0:
-                return float(val)
-    return None
+        if not annual:
+            continue
+        annual.sort(key=lambda x: x.get("end", ""), reverse=True)
+        for u in annual:
+            val = u.get("val")
+            end = u.get("end", "")
+            if val is None or val == 0:
+                continue
+            if best is None or end > best[0]:
+                best = (end, float(val))
+            break
+    return best[1] if best else None
 
 
 def extract_financials(facts: Dict) -> Optional[Dict]:
@@ -155,7 +167,11 @@ def extract_financials(facts: Dict) -> Optional[Dict]:
 
     op_income   = _latest_annual(gaap, ["OperatingIncomeLoss"])
     net_income  = _latest_annual(gaap, ["NetIncomeLoss", "ProfitLoss"])
-    gross_profit= _latest_annual(gaap, ["GrossProfit"])
+    cogs        = _latest_annual(gaap, [
+        "CostOfGoodsAndServicesSold",
+        "CostOfRevenue",
+        "CostOfGoodsSold",
+    ])
     da          = _latest_annual(gaap, [
         "DepreciationDepletionAndAmortization",
         "DepreciationAndAmortization",
@@ -166,8 +182,12 @@ def extract_financials(facts: Dict) -> Optional[Dict]:
         result["operating_margin"] = round(op_income / revenue * 100, 4)
     if net_income is not None:
         result["net_margin"] = round(net_income / revenue * 100, 4)
-    if gross_profit is not None:
-        result["gross_margin"] = round(gross_profit / revenue * 100, 4)
+    # Gross margin computed as (Revenue - COGS) / Revenue. The XBRL GrossProfit
+    # field is unreliable: companies that adopted ASC 606 left it frozen at 2020,
+    # and others tag non-standard values (e.g. AbbVie reports GP=$12B when
+    # Revenue-COGS yields $43B).
+    if cogs is not None and 0 < cogs < revenue:
+        result["gross_margin"] = round((revenue - cogs) / revenue * 100, 4)
     if op_income is not None and da is not None:
         result["ebitda_margin"] = round((op_income + da) / revenue * 100, 4)
     return result if len(result) > 1 else None
