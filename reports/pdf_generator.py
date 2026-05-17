@@ -180,15 +180,21 @@ def generate_report(analysis_data: dict) -> bytes:
         return Paragraph(str(txt), ParagraphStyle("mc", fontName=fn, fontSize=9,
                          textColor=ALG_DARK if bold else GRAY_TEXT, leading=13))
 
+    _l = lambda pt, en: pt if lang == "pt" else en
+    _legacy_law_pt = "Lei 9.430/1996 (legado · revogada)"
+    _legacy_law_en = "Law 9.430/1996 (legacy · repealed)"
+    _current_law   = "Lei 14.596/2023 · IN RFB 2.161/2023"
+    _is_legacy = any(x in _v(analysis_data.get("method"), "") for x in ["PCI", "PECEX"])
+    _law_value = (_legacy_law_pt if lang == "pt" else _legacy_law_en) if _is_legacy else _current_law
     meta_rows = [
-        [_mp("Empresa / Company", True),      _mp(_v(analysis_data.get("company_name"))),
-         _mp("Data / Date", True),             _mp(date_str)],
-        [_mp("Transação / Transaction", True), _mp(_v(analysis_data.get("transaction_description"))),
-         _mp("Método / Method", True),         _mp(_v(analysis_data.get("method")))],
-        [_mp("Parte Testada / Tested Party", True), _mp(_v(analysis_data.get("tested_party_name"))),
-         _mp("PLI", True),                     _mp(_v(analysis_data.get("pli")))],
-        [_mp("Exercício Fiscal / Fiscal Year", True), _mp(_v(analysis_data.get("fiscal_year"))),
-         _mp("Legislação", True),              _mp("Lei 9.430/1996 (legado · revogada)" if any(x in _v(analysis_data.get("method"), "") for x in ["PCI", "PECEX"]) else "Lei 14.596/2023 · IN RFB 2.161/2023")],
+        [_mp(_l("Empresa", "Company"), True),       _mp(_v(analysis_data.get("company_name"))),
+         _mp(_l("Data", "Date"), True),              _mp(date_str)],
+        [_mp(_l("Transação", "Transaction"), True), _mp(_v(analysis_data.get("transaction_description"))),
+         _mp(_l("Método", "Method"), True),          _mp(_v(analysis_data.get("method")))],
+        [_mp(_l("Parte Testada", "Tested Party"), True), _mp(_v(analysis_data.get("tested_party_name"))),
+         _mp("PLI", True),                            _mp(_v(analysis_data.get("pli")))],
+        [_mp(_l("Exercício Fiscal", "Fiscal Year"), True), _mp(_v(analysis_data.get("fiscal_year"))),
+         _mp(_l("Legislação", "Legislation"), True), _mp(_law_value)],
     ]
     meta_table = Table(meta_rows, colWidths=[4.5*cm, 5.5*cm, 3.0*cm, 4.0*cm])
     meta_table.setStyle(TableStyle([
