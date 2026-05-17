@@ -106,7 +106,7 @@ SIC_MAP = {
 
 
 @st.cache_data(ttl=7200, show_spinner=False)
-def get_company_facts(cik: int) -> Optional[Dict]:
+def get_company_facts_v2(cik: int) -> Optional[Dict]:
     """Fetch XBRL company facts from EDGAR. Cached 2h."""
     cik_str = str(cik).zfill(10)
     url = f"{EDGAR_BASE}/api/xbrl/companyfacts/CIK{cik_str}.json"
@@ -223,7 +223,7 @@ def fetch_comparables_edgar(
     for cik, default_name in seed_companies[:limit * 2]:
         if len(results) >= limit:
             break
-        facts = get_company_facts(cik)
+        facts = get_company_facts_v2(cik)
         if facts:
             fin = extract_financials(facts)
             if fin and pli in fin:
