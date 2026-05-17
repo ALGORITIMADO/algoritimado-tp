@@ -25,6 +25,13 @@ SIC_MAP = {
         (875320, "Vertex Pharmaceuticals Inc"),
         (1110803, "Illumina Inc"), (1048477, "BioMarin Pharmaceutical Inc"),
     ],
+    "Cannabis / Cannabis Medicinal": [
+        (1731348, "Tilray Brands Inc"), (1795139, "Green Thumb Industries Inc"),
+        (1754195, "Trulieve Cannabis Corp"), (1848416, "Verano Holdings Corp"),
+        (1584549, "Village Farms International Inc"),
+        (1813452, "Planet 13 Holdings Inc"), (1522767, "MariMed Inc"),
+        (1779474, "WM Technology Inc"), (1656472, "Cronos Group Inc"),
+    ],
     "Agriculture / Agronegócio": [
         (7084, "Archer-Daniels-Midland Co"), (1996862, "Bunge Global SA"),
         (1755672, "Corteva Inc"), (100493, "Tyson Foods Inc"),
@@ -41,6 +48,11 @@ SIC_MAP = {
         (16732, "Campbell's Co"), (40704, "General Mills Inc"),
         (1996862, "Bunge Global SA"),
         (100493, "Tyson Foods Inc"), (1637459, "Kraft Heinz Co"),
+    ],
+    "Cosmetics / Cosméticos": [
+        (1001250, "Estée Lauder Companies Inc"), (1024305, "Coty Inc"),
+        (1403568, "Ulta Beauty Inc"), (822663, "Inter Parfums Inc"),
+        (1021561, "Nu Skin Enterprises Inc"), (1096752, "Edgewell Personal Care Co"),
     ],
     "Chemicals / Química": [
         (1751788, "Dow Inc"), (1666700, "DuPont de Nemours Inc"),
@@ -70,6 +82,12 @@ SIC_MAP = {
         (49071, "Humana Inc"), (1739940, "Cigna Group"),
         (1022079, "Quest Diagnostics Inc"), (920148, "Labcorp Holdings Inc"),
     ],
+    "Education / Educação": [
+        (1157408, "Stride Inc"), (1013934, "Strategic Education Inc"),
+        (1434588, "Grand Canyon Education Inc"), (1046568, "Perdoceo Education Corp"),
+        (1562088, "Duolingo Inc"), (912766, "Laureate Education Inc"),
+        (104889, "Graham Holdings Co"),
+    ],
     "Financial Services / Financeiro": [
         (19617, "JPMorgan Chase & Co"), (70858, "Bank of America Corp"),
         (886982, "Goldman Sachs Group Inc"), (895421, "Morgan Stanley"),
@@ -84,6 +102,17 @@ SIC_MAP = {
         (104169, "Walmart Inc"), (1018724, "Amazon.com Inc"),
         (29534, "Dollar General Corp"), (27419, "Target Corp"),
         (354950, "Home Depot Inc"), (935703, "Dollar Tree Inc"),
+    ],
+    "Real Estate / Imobiliário": [
+        (1045609, "Prologis Inc"), (1101239, "Equinix Inc"),
+        (1393311, "Public Storage"), (726728, "Realty Income Corp"),
+        (1063761, "Simon Property Group Inc"), (766704, "Welltower Inc"),
+        (1289490, "Extra Space Storage Inc"),
+    ],
+    "Sanitation / Saneamento": [
+        (1410636, "American Water Works Co Inc"), (78128, "Essential Utilities Inc"),
+        (1035201, "California Water Service Group"), (108985, "York Water Co"),
+        (928340, "Consolidated Water Co Ltd"), (66004, "Middlesex Water Co"),
     ],
     "Energy / Energia": [
         (753308, "NextEra Energy Inc"), (1326160, "Duke Energy Corp"),

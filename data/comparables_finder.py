@@ -14,7 +14,7 @@ def find_comparables(
     company_name_edgar: Optional[str] = None,
     company_name_cvm: Optional[str] = None,
     sources: List[str] = ("SEC EDGAR", "CVM Brasil"),
-    year_cvm: int = 2023,
+    year_cvm: int = 2024,
     limit: int = 15,
     pli: str = "operating_margin"
 ) -> pd.DataFrame:

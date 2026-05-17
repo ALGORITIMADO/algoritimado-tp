@@ -11,17 +11,22 @@ CVM_BASE = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS"
 CNAE_MAP = {
     "Pharmaceutical / Farmacêutico":  ["FARMAC", "MEDIC", "LABORAT", "BIOMED"],
     "Biotech / Biotecnologia":        ["BIOTEC", "BIOLOG", "GENOMA"],
+    "Cannabis / Cannabis Medicinal":  ["CANNABIS", "CANABIS", "MACONHA", "CANABIDIOL", "CBD"],
     "Agriculture / Agronegócio":      ["AGRO", "AGRICOL", "CULTIVO", "RURAL", "GRAOS", "CANA"],
     "AgTech / Tecnologia Agrícola":   ["AGRO", "IRRIGAC", "SEMENTES", "FERTIL"],
     "Food & Beverage / Alimentos":    ["ALIMENT", "BEBID", "FRIGORI", "LATICIN", "ACUCAR"],
+    "Cosmetics / Cosméticos":         ["COSMETIC", "BELEZA", "PERFUMARIA", "HIGIENE PESSOAL", "NATURA", "BOTICARIO"],
     "Chemicals / Química":            ["QUIMIC", "PETROQUIM", "RESINAS", "FERTILIZ"],
     "Oil & Gas / Petróleo e Gás":     ["PETROLEO", "GAS", "PETROQ", "COMBUSTIV"],
     "Software / Tecnologia":          ["TECNOL", "SOFTWARE", "INFORM", "DIGITAL", "DADOS"],
     "Medical Devices / Dispositivos": ["HOSPITAL", "MEDIC", "ORTOP", "IMPLANT"],
     "Healthcare / Saúde":             ["SAUDE", "HOSPITAL", "CLINIC", "DIAGNOST"],
+    "Education / Educação":           ["EDUCAC", "ENSINO", "ESCOL", "UNIVERS", "COGNA", "YDUQS", "ANIMA"],
     "Financial Services / Financeiro":["FINANC", "BANCO", "CREDITO", "SEGURO"],
     "Manufacturing / Manufatura":     ["INDUSTRI", "MANUFAT", "FABRIC", "METALURG"],
     "Retail / Varejo":                ["VAREJO", "COMERCIO", "SUPERM", "LOJA"],
+    "Real Estate / Imobiliário":      ["IMOBILI", "INCORPOR", "CONSTRUTOR", "EMPREENDIM", "SHOPPING"],
+    "Sanitation / Saneamento":        ["SANEAM", "SABESP", "SANEPAR", "AGUA", "ESGOTO"],
     "Energy / Energia":               ["ENERG", "ELETRIC", "SOLAR", "EOLICA"],
     "Mining / Mineração":             ["MINER", "EXTRATIV", "MINERIO", "CARBO"],
     "Logistics / Logística":          ["LOGIST", "TRANSPORT", "ARMAZ", "CARGA"],
@@ -41,26 +46,25 @@ ACCOUNT_MAP = {
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def download_cvm_dre(year: int = 2023) -> Optional[pd.DataFrame]:
+def download_cvm_dre_v2(year: int = 2024) -> Optional[pd.DataFrame]:
     """
     Download CVM DRE (Income Statement) data for a given year.
-    Returns consolidated DRE DataFrame.
+    CVM bundles every DFP statement (BPA/BPP/DRE/DFC/...) inside
+    a single dfp_cia_aberta_{year}.zip — extract the consolidated DRE.
     """
-    url = f"{CVM_BASE}/dfp_cia_aberta_DRE_con_{year}.zip"
+    url = f"{CVM_BASE}/dfp_cia_aberta_{year}.zip"
     try:
         resp = requests.get(url, timeout=60)
         if resp.status_code != 200:
-            # Try individual year
-            url2 = f"{CVM_BASE}/dfp_cia_aberta_DRE_ind_{year}.zip"
-            resp = requests.get(url2, timeout=60)
-            if resp.status_code != 200:
-                return None
-
+            return None
         with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
-            csv_files = [f for f in z.namelist() if f.endswith(".csv")]
-            if not csv_files:
-                return None
-            with z.open(csv_files[0]) as f:
+            target = f"dfp_cia_aberta_DRE_con_{year}.csv"
+            names = z.namelist()
+            if target not in names:
+                target = next((n for n in names if "DRE_ind" in n), None)
+                if not target:
+                    return None
+            with z.open(target) as f:
                 df = pd.read_csv(f, sep=";", encoding="latin-1", low_memory=False)
         return df
     except Exception:
@@ -204,7 +208,7 @@ def fetch_comparables_cvm(
     if companies.empty:
         return pd.DataFrame()
 
-    dre = download_cvm_dre(year)
+    dre = download_cvm_dre_v2(year)
     if dre is None:
         return pd.DataFrame()
 
