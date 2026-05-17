@@ -539,9 +539,15 @@ for i in range(len(st.session_state.comparables)):
             f"v{i}", key=f"cv_{i}", value=float(st.session_state.comparables[i]["value"]),
             step=0.0001, format="%.4f", label_visibility="collapsed")
     with cs:
-        idx = SOURCES.index(st.session_state.comparables[i]["source"]) if st.session_state.comparables[i]["source"] in SOURCES else 0
+        _current_src = st.session_state.comparables[i]["source"]
+        # Preserve fetcher-provided sources (e.g. "CVM Brasil 2024", "SEC EDGAR")
+        # that aren't in the manual SOURCES list — otherwise selectbox silently
+        # overwrites the real source with SOURCES[0] (=SEC EDGAR), making BR
+        # comparables look like they came from SEC in the final PDF.
+        _options = SOURCES if _current_src in SOURCES else [_current_src] + SOURCES
         st.session_state.comparables[i]["source"] = st.selectbox(
-            f"s{i}", SOURCES, index=idx, key=f"cs_{i}", label_visibility="collapsed")
+            f"s{i}", _options, index=0 if _current_src not in SOURCES else SOURCES.index(_current_src),
+            key=f"cs_{i}", label_visibility="collapsed")
     with cd:
         if len(st.session_state.comparables) > 3:
             if st.button("✕", key=f"del_{i}"):

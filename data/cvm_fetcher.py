@@ -126,6 +126,11 @@ def search_companies_cvm(
             mask = filtered[name_col].str.contains("|".join(keywords), case=False, na=False)
             filtered = filtered[mask]
 
+    # The CAD CSV often has multiple rows for the same company (different
+    # CD_CVM as the company re-registered, share class splits, etc.). Dedupe
+    # by company name so Auto Search doesn't show Eurofarma three times.
+    filtered = filtered.drop_duplicates(subset=[name_col], keep="first")
+
     # Get CNPJ column
     cnpj_col = next((c for c in filtered.columns if "CNPJ" in c.upper()), None)
     cod_col = next((c for c in filtered.columns
