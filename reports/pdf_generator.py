@@ -268,7 +268,13 @@ def generate_report(analysis_data: dict) -> bytes:
 
         if iqr.tested_party_value is not None:
             tp_name = _v(analysis_data.get("tested_party_name"), "Parte Testada")
-            lbl_tp = ("Parte Testada: " if lang == "pt" else "Tested Party: ") + tp_name
+            lbl_tp_text = ("Parte Testada: " if lang == "pt" else "Tested Party: ") + tp_name
+            # Wrap inside Paragraph so long tested-party names (e.g. "ALGORITIMADO
+            # BRASIL LTDA") don't overflow the 5.5cm column and overlap the value
+            # column to its right.
+            _tp_style = ParagraphStyle("tp", fontName=FONT_BOLD, fontSize=9.5,
+                                       textColor=ALG_DARK, leading=12)
+            lbl_tp = Paragraph(lbl_tp_text, _tp_style)
             rows.append([lbl_tp, "{:.4f}".format(iqr.tested_party_value), iqr.compliance_status(lang)])
 
         iqr_table = Table(rows, colWidths=[5.5*cm, 3*cm, 8.5*cm])
@@ -317,13 +323,19 @@ def generate_report(analysis_data: dict) -> bytes:
         def _hp(txt):
             return Paragraph(txt, ParagraphStyle("ch", fontName=FONT_BOLD, fontSize=9,
                              textColor=WHITE, leading=12))
+        _cell_style = ParagraphStyle("cc", fontName=FONT, fontSize=9,
+                                     textColor=GRAY_TEXT, leading=11)
         comp_rows = [[_hp("#"), _hp(h_company), _hp(pli_lbl), _hp(h_source)]]
         for i, c in enumerate(comparables, 1):
             comp_rows.append([
                 str(i),
-                c.get("name", "—"),
+                # Wrap long names (e.g. "LIFEMED INDUSTRIAL DE EQUIP. E ART.
+                # MEDICOS E HOSP. S.A.") in a Paragraph so they break inside
+                # the 7cm Company column instead of overflowing into the
+                # value column on the right.
+                Paragraph(c.get("name", "—"), _cell_style),
                 "{:.4f}".format(c.get("value", 0)),
-                c.get("source", "SEC EDGAR / CVM"),
+                Paragraph(c.get("source", "SEC EDGAR / CVM"), _cell_style),
             ])
 
         comp_table = Table(comp_rows, colWidths=[0.8*cm, 7.0*cm, 3.2*cm, 6.0*cm])
