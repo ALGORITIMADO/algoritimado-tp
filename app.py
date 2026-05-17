@@ -193,21 +193,24 @@ with st.sidebar:
     L = _labels(is_pt)
     st.divider()
     st.markdown(f"**{L['method_label']}**")
-    _method_help = (
-        "MLT (TNMM): mais usado. Distribuidores, prestadores de serviços, manufatura contratada.\n\n"
-        "PIC (CUP): preços de mercado observáveis; commodities com cotação pública.\n\n"
-        "PRL (RPM): distribuidores e revendedores sem transformação significativa.\n\n"
-        "MCL (Cost Plus): fabricantes sob contrato; prestadores de serviços de baixo risco.\n\n"
-        "PCI / PECEX: legado Lei 9.430/96, só pra exercícios até 2023."
-    ) if is_pt else (
-        "MLT (TNMM): most used. Distributors, service providers, contract manufacturers.\n\n"
-        "PIC (CUP): observable market prices; commodities with public quotations.\n\n"
-        "PRL (RPM): distributors and resellers without significant transformation.\n\n"
-        "MCL (Cost Plus): contract manufacturers; low-risk service providers.\n\n"
-        "PCI / PECEX: legacy Law 9.430/96, fiscal years through 2023 only."
-    )
-    method = st.selectbox("method_sel", METHOD_OPTIONS, label_visibility="collapsed",
-                          help=_method_help)
+    method = st.selectbox("method_sel", METHOD_OPTIONS, label_visibility="collapsed")
+    with st.expander("ℹ️ Quando usar cada método" if is_pt else "ℹ️ When to use each method"):
+        if is_pt:
+            st.markdown(
+                "- **MLT (TNMM)** — mais usado. Distribuidores, prestadores de serviços, manufatura contratada\n"
+                "- **PIC (CUP)** — preços de mercado observáveis; commodities com cotação pública\n"
+                "- **PRL (RPM)** — distribuidores e revendedores sem transformação significativa\n"
+                "- **MCL (Cost Plus)** — fabricantes sob contrato; serviços de baixo risco\n"
+                "- **PCI / PECEX** — legado Lei 9.430/96, só pra exercícios até 2023"
+            )
+        else:
+            st.markdown(
+                "- **MLT (TNMM)** — most used. Distributors, service providers, contract manufacturers\n"
+                "- **PIC (CUP)** — observable market prices; commodities with public quotations\n"
+                "- **PRL (RPM)** — distributors and resellers without significant transformation\n"
+                "- **MCL (Cost Plus)** — contract manufacturers; low-risk service providers\n"
+                "- **PCI / PECEX** — legacy Law 9.430/96, fiscal years through 2023 only"
+            )
     st.divider()
     st.markdown(f"**{L['about_title']}**")
     st.markdown(f'<div style="font-size:12px;color:#6B7280">{L["about_text"]}</div>', unsafe_allow_html=True)
