@@ -52,6 +52,11 @@ def _log_event(event_type: str, payload: dict | None = None) -> None:
         "email": st.session_state.get("user_email", ""),
         "domain": st.session_state.get("user_domain", ""),
         "company": st.session_state.get("user_company", ""),
+        "name": st.session_state.get("user_name", ""),
+        "role": st.session_state.get("user_role", ""),
+        "opt_in_marketing": bool(st.session_state.get("opt_in_marketing", False)),
+        "consent_lgpd": bool(st.session_state.get("consent_lgpd", False)),
+        "consent_ts": st.session_state.get("consent_ts", ""),
         "source": st.session_state.get("source", ""),
         "payload": payload or {},
     }
@@ -97,18 +102,24 @@ def _inline_signup_form() -> None:
         with c2:
             email = st.text_input("Email profissional *", placeholder="voce@empresa.com.br")
             cargo = st.text_input("Cargo (opcional)", placeholder="Ex: Tax Manager")
+        consent_lgpd = st.checkbox(
+            "Li e concordo com a Política de Privacidade e os Termos de Uso da Algoritimado, "
+            "e autorizo o tratamento dos meus dados pessoais (nome, email, empresa, cargo) "
+            "para liberação de acesso à plataforma, em conformidade com a LGPD (Lei 13.709/2018). *",
+            value=False,
+            key="consent_lgpd_checkbox",
+        )
         opt_in = st.checkbox(
-            "Aceito receber comunicações da Algoritimado sobre Transfer Pricing e atualizações da plataforma.",
-            value=True,
+            "Também aceito receber comunicações da Algoritimado sobre Transfer Pricing "
+            "e atualizações da plataforma (opcional).",
+            value=False,
+            key="opt_in_marketing_checkbox",
         )
         st.markdown(
             '<div style="font-size:11px;color:#6B7280;margin-top:.6rem;line-height:1.5">'
-            'Ao acessar você concorda com a '
-            '<a href="https://algoritimado.com/policies/privacy-policy" target="_blank" style="color:#2D6A4F;font-weight:600">Política de Privacidade</a> '
-            'e os <a href="https://algoritimado.com/policies/terms-of-service" target="_blank" style="color:#2D6A4F;font-weight:600">Termos de Uso</a>. '
-            'A Algoritimado coleta seu nome, email e empresa para autenticação e comunicação relacionada à plataforma, '
-            'em conformidade com a <b>LGPD (Lei 13.709/2018)</b>. '
-            'Você pode solicitar exclusão dos seus dados a qualquer momento via '
+            '<a href="https://algoritimado.com/policies/privacy-policy" target="_blank" style="color:#2D6A4F;font-weight:600">Política de Privacidade</a> · '
+            '<a href="https://algoritimado.com/policies/terms-of-service" target="_blank" style="color:#2D6A4F;font-weight:600">Termos de Uso</a>. '
+            'Você pode revogar consentimentos e solicitar exclusão dos seus dados a qualquer momento via '
             '<a href="mailto:contato@algoritimado.com" style="color:#2D6A4F;font-weight:600">contato@algoritimado.com</a>.'
             '</div>',
             unsafe_allow_html=True
@@ -120,6 +131,8 @@ def _inline_signup_form() -> None:
             nome_v, email_v, empresa_v = nome.strip(), email.strip(), empresa.strip()
             if not nome_v or "@" not in email_v or not empresa_v:
                 st.error("⚠️ Preencha nome, email válido (com @) e empresa.")
+            elif not consent_lgpd:
+                st.error("⚠️ Para acessar a plataforma é necessário concordar com o tratamento de dados (LGPD).")
             else:
                 st.session_state["user_email"] = email_v
                 st.session_state["user_name"] = nome_v
@@ -127,6 +140,8 @@ def _inline_signup_form() -> None:
                 st.session_state["user_domain"] = email_v.split("@", 1)[1].lower()
                 st.session_state["user_role"] = cargo.strip()
                 st.session_state["opt_in_marketing"] = bool(opt_in)
+                st.session_state["consent_lgpd"] = True
+                st.session_state["consent_ts"] = datetime.now(_tz.utc).isoformat()
                 st.session_state["source"] = "direct"
                 st.session_state["authenticated"] = True
                 _log_event("session_start_direct")
