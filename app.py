@@ -43,7 +43,25 @@ footer{visibility:hidden}#MainMenu{visibility:hidden}
 
 # ── IDENTIDADE & EVENT LOGGING ────────────────────────────────────────────────
 import json as _json
+import threading as _threading
+import urllib.request as _urlreq
 from datetime import timezone as _tz
+
+def _post_to_webhook(rec: dict) -> None:
+    url = ""
+    try:
+        url = st.secrets.get("WEBHOOK_URL", "")
+    except Exception:
+        url = ""
+    if not url:
+        return
+    try:
+        data = _json.dumps(rec, ensure_ascii=False).encode("utf-8")
+        req = _urlreq.Request(url, data=data, method="POST",
+                              headers={"Content-Type": "application/json"})
+        _urlreq.urlopen(req, timeout=3).read()
+    except Exception as e:
+        print(f"[ALGORITIMADO_WEBHOOK_FAIL] {e}", flush=True)
 
 def _log_event(event_type: str, payload: dict | None = None) -> None:
     rec = {
@@ -61,6 +79,7 @@ def _log_event(event_type: str, payload: dict | None = None) -> None:
         "payload": payload or {},
     }
     print("[ALGORITIMADO_EVENT] " + _json.dumps(rec, ensure_ascii=False), flush=True)
+    _threading.Thread(target=_post_to_webhook, args=(rec,), daemon=True).start()
 
 def _get_query_params() -> dict:
     try:
