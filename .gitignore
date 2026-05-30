@@ -1,4 +1,5 @@
 app.py.backup
+*.backup-*
 __pycache__/
 *.pyc
 .DS_Store
