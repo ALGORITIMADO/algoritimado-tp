@@ -273,6 +273,16 @@ def fetch_comparables_cvm(
         company_nm = str(row[name_col])
         margins = calculate_margins_cvm(dre, company_code, dre_code_col)
         if margins and pli in margins:
+            # Audit trail: link to the company's official CVM document page (RAD),
+            # where the DFP/financial statements are listed. Company-level (the
+            # open-data DRE has no per-document protocol) — analogous to the SEC
+            # company filing list. Verified: name + DFP present on the page.
+            try:
+                _cd = int(float(company_code))
+                src_url = ("https://www.rad.cvm.gov.br/ENET/frmConsultaExternaCVM.aspx"
+                           f"?tipoconsulta=CVM&codigoCVM={_cd}")
+            except (TypeError, ValueError):
+                src_url = ""
             results.append({
                 "name": company_nm,
                 "value": margins[pli],
@@ -280,8 +290,7 @@ def fetch_comparables_cvm(
                 "net_margin": margins.get("net_margin"),
                 "gross_margin": margins.get("gross_margin"),
                 "source": f"CVM Brasil {year}",
-                # 'Show the math' breakdown (BRL). CVM has no clean per-document
-                # permalink yet, so source_url stays empty — link is a follow-up.
+                "source_url": src_url,
                 "breakdown": _pli_breakdown_cvm(margins, pli),
             })
 
