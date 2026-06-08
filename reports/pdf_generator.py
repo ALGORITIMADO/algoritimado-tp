@@ -123,6 +123,37 @@ def _v(val, fallback="—"):
     return str(val).strip()
 
 
+def _esc_xml(s):
+    """Escape XML special chars for ReportLab Paragraph markup."""
+    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _fmt_mi(v, lang):
+    """Format a USD/BRL figure in millions with localized thousands separator."""
+    s = "{:,.0f}".format(v / 1e6)
+    return s.replace(",", ".") if lang == "pt" else s
+
+
+def _breakdown_text(bd, lang):
+    """One-line audit trail: numerator / revenue = margin, from the same filing."""
+    cur = {"USD": "US$", "BRL": "R$"}.get(bd.get("currency", "USD"), "")
+    labels = {
+        "operating": ("Lucro operacional", "Operating income"),
+        "net":       ("Lucro líquido",     "Net income"),
+        "gross":     ("Receita - CMV",     "Revenue - COGS"),
+        "ebitda":    ("EBIT + D&A",        "EBIT + D&A"),
+    }
+    num_lbl = labels.get(bd.get("kind"), ("", ""))[0 if lang == "pt" else 1]
+    den_lbl = "Receita" if lang == "pt" else "Revenue"
+    unit    = "mi" if lang == "pt" else "M"
+    margin  = "{:.2f}".format(bd.get("margin", 0))
+    if lang == "pt":
+        margin = margin.replace(".", ",")
+    return "{nl} {c} {n} {u} ÷ {dl} {c} {d} {u} = {m}%".format(
+        nl=num_lbl, dl=den_lbl, c=cur, u=unit, m=margin,
+        n=_fmt_mi(bd["num"], lang), d=_fmt_mi(bd["den"], lang))
+
+
 def generate_report(analysis_data: dict) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -327,15 +358,36 @@ def generate_report(analysis_data: dict) -> bytes:
                                      textColor=GRAY_TEXT, leading=11)
         comp_rows = [[_hp("#"), _hp(h_company), _hp(pli_lbl), _hp(h_source)]]
         for i, c in enumerate(comparables, 1):
+            # Audit trail: when the fetcher provided a primary-source URL (SEC
+            # EDGAR today), render the Source cell as a clickable link to the
+            # official filing. Manual entries and CVM rows (no clean permalink)
+            # stay as plain text. '&' must be XML-escaped for ReportLab.
+            src_txt = c.get("source", "SEC EDGAR / CVM")
+            src_url = c.get("source_url") or ""
+            if src_url:
+                _u = src_url.replace("&", "&amp;")
+                src_cell = Paragraph(
+                    '<a href="{}" color="#1d4ed8"><u>{} (10-K/20-F)</u></a>'.format(_u, src_txt),
+                    _cell_style)
+            else:
+                src_cell = Paragraph(src_txt, _cell_style)
+            # Company name, plus a small 'show the math' line underneath when the
+            # comparable carries a breakdown (numerator / revenue = margin, from
+            # the same filing). Manual/CVM rows have none → just the name.
+            name_html = _esc_xml(c.get("name", "—"))
+            bd = c.get("breakdown")
+            if isinstance(bd, dict):
+                name_html += ('<br/><font size="6.5" color="#8A8A8A">'
+                              + _esc_xml(_breakdown_text(bd, lang)) + '</font>')
             comp_rows.append([
                 str(i),
                 # Wrap long names (e.g. "LIFEMED INDUSTRIAL DE EQUIP. E ART.
                 # MEDICOS E HOSP. S.A.") in a Paragraph so they break inside
                 # the 7cm Company column instead of overflowing into the
                 # value column on the right.
-                Paragraph(c.get("name", "—"), _cell_style),
+                Paragraph(name_html, _cell_style),
                 "{:.4f}".format(c.get("value", 0)),
-                Paragraph(c.get("source", "SEC EDGAR / CVM"), _cell_style),
+                src_cell,
             ])
 
         comp_table = Table(comp_rows, colWidths=[0.8*cm, 7.0*cm, 3.2*cm, 6.0*cm])

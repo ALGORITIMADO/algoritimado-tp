@@ -149,14 +149,23 @@ def get_company_facts_v2(cik: int) -> Optional[Dict]:
         return None
 
 
-def _latest_annual(gaap: Dict, fields: List[str]) -> Optional[float]:
-    """Get most recent annual 10-K/20-F value across ALL listed fields.
+def _latest_annual_record(gaap: Dict, fields: List[str], target_year: Optional[int] = None):
+    """Annual 10-K/20-F datapoint across ALL listed fields.
 
-    Scans every field and returns the value with the latest end_date — companies
-    that migrated to ASC 606 fields often leave legacy fields (Revenues, GrossProfit)
-    frozen at 2020 data, so iterating field-by-field would return stale values.
+    Returns (value, accn, end) or None. `accn` is the SEC accession number of
+    the filing the value came from — used to build a direct link to the exact
+    source document (audit trail). `end` is the fiscal-period end date.
+
+    When `target_year` is given, only datapoints whose fiscal-period END falls in
+    that year are considered — so a 2024 analysis pulls 2024 financials, not the
+    latest. Comparability requires same-year data; if a company has no datapoint
+    for that year, this returns None and the caller excludes it (never mixes years).
+
+    When `target_year` is None, returns the value with the latest end_date —
+    companies that migrated to ASC 606 fields often leave legacy fields frozen at
+    2020 data, so iterating field-by-field would return stale values.
     """
-    best = None
+    best = None  # (end, value, accn)
     for field in fields:
         if field not in gaap:
             continue
@@ -173,56 +182,106 @@ def _latest_annual(gaap: Dict, fields: List[str]) -> Optional[float]:
             end = u.get("end", "")
             if val is None or val == 0:
                 continue
+            # Honor the requested fiscal year: skip non-matching years and keep
+            # scanning older datapoints until the right year is found.
+            if target_year is not None and not str(end).startswith(str(target_year)):
+                continue
             if best is None or end > best[0]:
-                best = (end, float(val))
+                best = (end, float(val), u.get("accn", ""))
             break
-    return best[1] if best else None
+    return (best[1], best[2], best[0]) if best else None
 
 
-def extract_financials(facts: Dict) -> Optional[Dict]:
-    """Extract margins from XBRL company facts."""
+def _latest_annual(gaap: Dict, fields: List[str], target_year: Optional[int] = None) -> Optional[float]:
+    """Annual value (float) across ALL listed fields, or None. Honors target_year."""
+    rec = _latest_annual_record(gaap, fields, target_year=target_year)
+    return rec[0] if rec else None
+
+
+def extract_financials(facts: Dict, target_year: Optional[int] = None) -> Optional[Dict]:
+    """Extract margins from XBRL company facts.
+
+    When `target_year` is given, ALL line items (revenue, operating income, net
+    income, COGS, D&A) are taken from that fiscal year so the margins are internally
+    consistent and match the analysis year. A company missing that year is dropped.
+    """
     if not facts:
         return None
     gaap = facts.get("facts", {}).get("us-gaap", {})
     if not gaap:
         return None
 
-    revenue = _latest_annual(gaap, [
+    rev_rec = _latest_annual_record(gaap, [
         "Revenues",
         "RevenueFromContractWithCustomerExcludingAssessedTax",
         "RevenueFromContractWithCustomerIncludingAssessedTax",
         "SalesRevenueNet",
         "SalesRevenueGoodsNet",
-    ])
+    ], target_year=target_year)
+    revenue = rev_rec[0] if rev_rec else None
     if not revenue or revenue <= 0:
         return None
 
-    op_income   = _latest_annual(gaap, ["OperatingIncomeLoss"])
-    net_income  = _latest_annual(gaap, ["NetIncomeLoss", "ProfitLoss"])
+    op_income   = _latest_annual(gaap, ["OperatingIncomeLoss"], target_year=target_year)
+    net_income  = _latest_annual(gaap, ["NetIncomeLoss", "ProfitLoss"], target_year=target_year)
     cogs        = _latest_annual(gaap, [
         "CostOfGoodsAndServicesSold",
         "CostOfRevenue",
         "CostOfGoodsSold",
-    ])
+    ], target_year=target_year)
     da          = _latest_annual(gaap, [
         "DepreciationDepletionAndAmortization",
         "DepreciationAndAmortization",
-    ])
+    ], target_year=target_year)
 
+    # Keep the raw line items (not just the margins) so the report can "show the
+    # math" — numerator and denominator traceable to the same filing.
     result = {"revenue_usd": revenue}
+    if rev_rec and rev_rec[1]:
+        # Accession number + fiscal-year end of the filing the financials came
+        # from → lets the caller link to the exact source 10-K/20-F document.
+        result["_accn"] = rev_rec[1]
+        result["_fy_end"] = rev_rec[2]
     if op_income is not None:
+        result["operating_income_usd"] = op_income
         result["operating_margin"] = round(op_income / revenue * 100, 4)
     if net_income is not None:
+        result["net_income_usd"] = net_income
         result["net_margin"] = round(net_income / revenue * 100, 4)
     # Gross margin computed as (Revenue - COGS) / Revenue. The XBRL GrossProfit
     # field is unreliable: companies that adopted ASC 606 left it frozen at 2020,
     # and others tag non-standard values (e.g. AbbVie reports GP=$12B when
     # Revenue-COGS yields $43B).
     if cogs is not None and 0 < cogs < revenue:
+        result["cogs_usd"] = cogs
         result["gross_margin"] = round((revenue - cogs) / revenue * 100, 4)
     if op_income is not None and da is not None:
+        result["da_usd"] = da
         result["ebitda_margin"] = round((op_income + da) / revenue * 100, 4)
     return result if len(result) > 1 else None
+
+
+def _pli_breakdown(fin: Dict, pli: str) -> Optional[Dict]:
+    """Build a 'show the math' breakdown for the chosen PLI: numerator,
+    denominator (revenue) and resulting margin — all from the same filing.
+    Returns None when the PLI's components aren't available (graceful)."""
+    rev = fin.get("revenue_usd")
+    if not rev:
+        return None
+    if pli == "operating_margin" and fin.get("operating_income_usd") is not None:
+        return {"kind": "operating", "num": fin["operating_income_usd"],
+                "den": rev, "margin": fin["operating_margin"], "currency": "USD"}
+    if pli == "net_margin" and fin.get("net_income_usd") is not None:
+        return {"kind": "net", "num": fin["net_income_usd"],
+                "den": rev, "margin": fin["net_margin"], "currency": "USD"}
+    if pli == "gross_margin" and fin.get("cogs_usd") is not None:
+        return {"kind": "gross", "num": rev - fin["cogs_usd"],
+                "den": rev, "margin": fin["gross_margin"], "currency": "USD"}
+    if pli == "ebitda_margin" and fin.get("operating_income_usd") is not None \
+            and fin.get("da_usd") is not None:
+        return {"kind": "ebitda", "num": fin["operating_income_usd"] + fin["da_usd"],
+                "den": rev, "margin": fin["ebitda_margin"], "currency": "USD"}
+    return None
 
 
 def fetch_comparables_edgar(
@@ -230,11 +289,14 @@ def fetch_comparables_edgar(
     sic_codes: Optional[List[str]] = None,
     company_name: Optional[str] = None,
     limit: int = 15,
-    pli: str = "operating_margin"
+    pli: str = "operating_margin",
+    year: Optional[int] = None,
 ) -> pd.DataFrame:
     """
     Fetch comparable companies from EDGAR XBRL.
     Uses sector seed list → live XBRL financial data.
+    When `year` is given, financials are pulled from that fiscal year (same-year
+    comparability); companies without data for that year are excluded.
     """
     # Get seed companies for the industry
     seed_companies = []
@@ -257,9 +319,23 @@ def fetch_comparables_edgar(
             break
         facts = get_company_facts_v2(cik)
         if facts:
-            fin = extract_financials(facts)
+            fin = extract_financials(facts, target_year=year)
             if fin and pli in fin:
                 name = facts.get("entityName", default_name) or default_name
+                # Audit trail: link straight to the exact filing the financials
+                # were extracted from, using its accession number. Falls back to
+                # the company's filing list if the accession number is missing.
+                accn = fin.get("_accn")
+                if accn:
+                    src_url = (
+                        "https://www.sec.gov/Archives/edgar/data/"
+                        f"{int(cik)}/{accn.replace('-', '')}/{accn}-index.htm"
+                    )
+                else:
+                    src_url = (
+                        "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany"
+                        f"&CIK={str(cik).zfill(10)}&type=&dateb=&owner=include&count=40"
+                    )
                 results.append({
                     "name": name,
                     "value": fin[pli],
@@ -268,6 +344,8 @@ def fetch_comparables_edgar(
                     "gross_margin": fin.get("gross_margin"),
                     "ebitda_margin": fin.get("ebitda_margin"),
                     "source": "SEC EDGAR",
+                    "source_url": src_url,
+                    "breakdown": _pli_breakdown(fin, pli),
                 })
         time.sleep(0.1)
 

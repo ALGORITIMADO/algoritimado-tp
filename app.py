@@ -430,6 +430,18 @@ with st.expander(ai_label, expanded=False):
                 "Máx resultados" if is_pt else "Max results",
                 min_value=5, max_value=30, value=15, key="auto_limit"
             )
+            # Same-year comparability: default the search year to the analysis
+            # fiscal year so they can't drift apart.
+            _def_year = int(fiscal_year) if str(fiscal_year).strip().isdigit() else 2024
+            _def_year = min(max(_def_year, 2015), 2025)
+            auto_year = st.number_input(
+                "Exercício / Fiscal Year",
+                min_value=2015, max_value=2025, value=_def_year, step=1, key="auto_year",
+                help=("Os comparáveis virão deste exercício (SEC e CVM). Empresas sem "
+                      "dado deste ano são excluídas — nunca se mistura ano." if is_pt else
+                      "Comparables will come from this fiscal year (SEC and CVM). Companies "
+                      "without data for this year are excluded — years are never mixed.")
+            )
 
         search_clicked = st.button(
             "🔍 Buscar Comparáveis" if is_pt else "🔍 Search Comparables",
@@ -472,6 +484,7 @@ with st.expander(ai_label, expanded=False):
                         company_name_edgar=auto_name_edgar,
                         company_name_cvm=auto_name_cvm,
                         sources=auto_sources,
+                        year=int(auto_year),
                         limit=int(auto_limit),
                         pli=search_pli
                     )
@@ -484,6 +497,10 @@ with st.expander(ai_label, expanded=False):
                         if pd.notna(gm) and gm < 100 else None
                     )
                     results_df = results_df.dropna(subset=["value"]).reset_index(drop=True)
+                    # Value was transformed (gross margin → markup), so the margin
+                    # breakdown no longer matches the displayed value — drop it.
+                    if "breakdown" in results_df.columns:
+                        results_df["breakdown"] = None
 
                 if results_df.empty:
                     st.warning(
@@ -541,11 +558,21 @@ with st.expander(ai_label, expanded=False):
                 for idx in indices:
                     if idx < len(res):
                         row = res.iloc[idx]
+                        _src_url = row.get("source_url", "")
+                        _bd = row.get("breakdown", None)
                         new_comp = {
                             "name": row["name"],
                             "value": float(row["value"]),
-                            "source": row.get("source", "SEC EDGAR / CVM")
+                            "source": row.get("source", "SEC EDGAR / CVM"),
+                            # source_url rides along silently (not shown in the
+                            # manual table) so the PDF can link to the filing.
+                            # CVM rows have no clean permalink → empty/NaN → "".
+                            "source_url": "" if pd.isna(_src_url) else str(_src_url),
                         }
+                        # breakdown (numerator/revenue/margin from the filing)
+                        # rides along too, when present (SEC rows only today).
+                        if isinstance(_bd, dict):
+                            new_comp["breakdown"] = _bd
                         st.session_state.comparables.append(new_comp)
                         added += 1
                 st.success(

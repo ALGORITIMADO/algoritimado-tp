@@ -14,12 +14,13 @@ def find_comparables(
     company_name_edgar: Optional[str] = None,
     company_name_cvm: Optional[str] = None,
     sources: List[str] = ("SEC EDGAR", "CVM Brasil"),
-    year_cvm: int = 2024,
+    year: int = 2024,
     limit: int = 15,
     pli: str = "operating_margin"
 ) -> pd.DataFrame:
     """
     Search both EDGAR and CVM for comparables and merge results.
+    `year` is the fiscal year both sources must return (same-year comparability).
     """
     all_results = []
 
@@ -30,7 +31,8 @@ def find_comparables(
             sic_codes=sic,
             company_name=company_name_edgar,
             limit=limit,
-            pli=pli
+            pli=pli,
+            year=year
         )
         if not edgar_df.empty:
             all_results.append(edgar_df)
@@ -39,7 +41,7 @@ def find_comparables(
         cvm_df = fetch_comparables_cvm(
             industry=industry,
             company_name=company_name_cvm,
-            year=year_cvm,
+            year=year,
             limit=limit,
             pli=pli
         )
