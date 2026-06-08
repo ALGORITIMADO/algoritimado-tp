@@ -171,13 +171,22 @@ def calculate_margins_cvm(
             latest_date = company_dre[date_col].max()
             company_dre = company_dre[company_dre[date_col] == latest_date]
 
+        # CVM reports figures in a scale (ESCALA_MOEDA): "MIL" = thousands of BRL,
+        # "UNIDADE" = units. Margins are scale-invariant, but the absolute figures
+        # shown in the report's breakdown must be scaled to real BRL.
+        esc_col = next((c for c in company_dre.columns if "ESCALA" in c.upper()), None)
+        scale = 1.0
+        if esc_col and not company_dre.empty:
+            if "MIL" in str(company_dre[esc_col].iloc[0]).upper():
+                scale = 1000.0
+
         values = {}
         for acc_code, acc_name in ACCOUNT_MAP.items():
             row = company_dre[company_dre[acc_col].astype(str).str.startswith(acc_code)]
             if not row.empty:
                 val = pd.to_numeric(row[val_col].iloc[0], errors="coerce")
                 if pd.notna(val):
-                    values[acc_name] = float(val)
+                    values[acc_name] = float(val) * scale
 
         if "revenue" not in values or values["revenue"] == 0:
             return None
@@ -186,15 +195,36 @@ def calculate_margins_cvm(
         margins = {}
         if "gross_profit" in values:
             margins["gross_margin"] = round(values["gross_profit"] / rev * 100, 4)
+            margins["gross_profit_brl"] = values["gross_profit"]
         if "ebit" in values:
             margins["operating_margin"] = round(values["ebit"] / rev * 100, 4)
+            margins["ebit_brl"] = values["ebit"]
         if "net_income" in values:
             margins["net_margin"] = round(values["net_income"] / rev * 100, 4)
+            margins["net_income_brl"] = values["net_income"]
         margins["revenue_brl"] = rev
         return margins if margins else None
 
     except Exception:
         return None
+
+
+def _pli_breakdown_cvm(m: dict, pli: str) -> Optional[dict]:
+    """'Show the math' breakdown for a CVM comparable (BRL). DRE 3.07 (EBIT) maps
+    to operating, 3.11 net income, 3.05 gross profit. CVM has no D&A split → no EBITDA."""
+    rev = m.get("revenue_brl")
+    if not rev:
+        return None
+    if pli == "operating_margin" and m.get("ebit_brl") is not None:
+        return {"kind": "operating", "num": m["ebit_brl"], "den": rev,
+                "margin": m["operating_margin"], "currency": "BRL"}
+    if pli == "net_margin" and m.get("net_income_brl") is not None:
+        return {"kind": "net", "num": m["net_income_brl"], "den": rev,
+                "margin": m["net_margin"], "currency": "BRL"}
+    if pli == "gross_margin" and m.get("gross_profit_brl") is not None:
+        return {"kind": "gross", "num": m["gross_profit_brl"], "den": rev,
+                "margin": m["gross_margin"], "currency": "BRL"}
+    return None
 
 
 def fetch_comparables_cvm(
@@ -250,6 +280,9 @@ def fetch_comparables_cvm(
                 "net_margin": margins.get("net_margin"),
                 "gross_margin": margins.get("gross_margin"),
                 "source": f"CVM Brasil {year}",
+                # 'Show the math' breakdown (BRL). CVM has no clean per-document
+                # permalink yet, so source_url stays empty — link is a follow-up.
+                "breakdown": _pli_breakdown_cvm(margins, pli),
             })
 
     if not results:

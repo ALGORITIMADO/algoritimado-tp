@@ -135,19 +135,24 @@ def _fmt_mi(v, lang):
 
 
 def _breakdown_text(bd, lang):
-    """One-line audit trail: numerator / revenue = margin, from the same filing."""
+    """One-line audit trail: numerator / denominator = margin (or markup), from
+    the same filing. Denominator is revenue for margins, COGS for markup (MCL)."""
     cur = {"USD": "US$", "BRL": "R$"}.get(bd.get("currency", "USD"), "")
+    pt = (lang == "pt")
+    # kind -> (numerator_pt, numerator_en, denominator_pt, denominator_en)
     labels = {
-        "operating": ("Lucro operacional", "Operating income"),
-        "net":       ("Lucro líquido",     "Net income"),
-        "gross":     ("Receita - CMV",     "Revenue - COGS"),
-        "ebitda":    ("EBIT + D&A",        "EBIT + D&A"),
+        "operating": ("Lucro operacional", "Operating income", "Receita", "Revenue"),
+        "net":       ("Lucro líquido",     "Net income",       "Receita", "Revenue"),
+        "gross":     ("Lucro bruto",       "Gross profit",     "Receita", "Revenue"),
+        "ebitda":    ("EBIT + D&A",        "EBIT + D&A",       "Receita", "Revenue"),
+        "markup":    ("Lucro bruto",       "Gross profit",     "CMV",     "COGS"),
     }
-    num_lbl = labels.get(bd.get("kind"), ("", ""))[0 if lang == "pt" else 1]
-    den_lbl = "Receita" if lang == "pt" else "Revenue"
-    unit    = "mi" if lang == "pt" else "M"
+    nl_pt, nl_en, dl_pt, dl_en = labels.get(bd.get("kind"), ("", "", "Receita", "Revenue"))
+    num_lbl = nl_pt if pt else nl_en
+    den_lbl = dl_pt if pt else dl_en
+    unit    = "mi" if pt else "M"
     margin  = "{:.2f}".format(bd.get("margin", 0))
-    if lang == "pt":
+    if pt:
         margin = margin.replace(".", ",")
     return "{nl} {c} {n} {u} ÷ {dl} {c} {d} {u} = {m}%".format(
         nl=num_lbl, dl=den_lbl, c=cur, u=unit, m=margin,

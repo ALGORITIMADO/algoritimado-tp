@@ -497,10 +497,22 @@ with st.expander(ai_label, expanded=False):
                         if pd.notna(gm) and gm < 100 else None
                     )
                     results_df = results_df.dropna(subset=["value"]).reset_index(drop=True)
-                    # Value was transformed (gross margin → markup), so the margin
-                    # breakdown no longer matches the displayed value — drop it.
+                    # Value was transformed (gross margin → markup). Recast the
+                    # breakdown to match: gross profit ÷ COGS = markup, same filing.
+                    def _to_markup_breakdown(bd):
+                        if not isinstance(bd, dict):
+                            return None
+                        gp, rev = bd.get("num"), bd.get("den")  # gross profit, revenue
+                        if gp is None or rev is None:
+                            return None
+                        cogs = rev - gp
+                        if cogs <= 0:
+                            return None
+                        return {"kind": "markup", "num": gp, "den": cogs,
+                                "margin": round(gp / cogs * 100, 4),
+                                "currency": bd.get("currency", "USD")}
                     if "breakdown" in results_df.columns:
-                        results_df["breakdown"] = None
+                        results_df["breakdown"] = results_df["breakdown"].apply(_to_markup_breakdown)
 
                 if results_df.empty:
                     st.warning(
