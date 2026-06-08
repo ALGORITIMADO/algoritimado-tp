@@ -273,16 +273,14 @@ def fetch_comparables_cvm(
         company_nm = str(row[name_col])
         margins = calculate_margins_cvm(dre, company_code, dre_code_col)
         if margins and pli in margins:
-            # Audit trail: link to the company's official CVM document page (RAD),
-            # where the DFP/financial statements are listed. Company-level (the
-            # open-data DRE has no per-document protocol) — analogous to the SEC
-            # company filing list. Verified: name + DFP present on the page.
-            try:
-                _cd = int(float(company_code))
-                src_url = ("https://www.rad.cvm.gov.br/ENET/frmConsultaExternaCVM.aspx"
-                           f"?tipoconsulta=CVM&codigoCVM={_cd}")
-            except (TypeError, ValueError):
-                src_url = ""
+            # No CVM source link yet: the RAD page (frmConsultaExternaCVM.aspx?
+            # codigoCVM=...) is an ASP.NET form that loads EMPTY on a plain GET —
+            # the document grid only fills after a postback ("Consultar"). So a
+            # deep-link opens the company page with NO data (confirmed). The real
+            # per-document URL (frmExibirArquivoIPEExterno?NumeroProtocoloEntrega=)
+            # needs the protocol number, which the open-data DRE CSV doesn't carry
+            # — that's a separate piece. Keep the breakdown (figures are traceable
+            # to the official CVM open data); no broken link.
             results.append({
                 "name": company_nm,
                 "value": margins[pli],
@@ -290,7 +288,7 @@ def fetch_comparables_cvm(
                 "net_margin": margins.get("net_margin"),
                 "gross_margin": margins.get("gross_margin"),
                 "source": f"CVM Brasil {year}",
-                "source_url": src_url,
+                "source_url": "",
                 "breakdown": _pli_breakdown_cvm(margins, pli),
             })
 
