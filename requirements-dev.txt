@@ -1,0 +1,4 @@
+# Dev/test-only dependencies (not needed by the deployed app).
+# Used by tests/ and the CI workflow.
+pytest
+pypdf
