@@ -72,6 +72,39 @@ def download_cvm_dre_v2(year: int = 2024) -> Optional[pd.DataFrame]:
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
+def get_cvm_doc_links(year: int = 2024) -> dict:
+    """Map CD_CVM -> official DFP document link for the year.
+
+    The DFP zip's index file (dfp_cia_aberta_{year}.csv) carries a LINK_DOC column
+    pointing to the official CVM document download (a package with the DFP PDF +
+    XMLs). This is the audit-trail source link for Brazilian comparables — unlike
+    the RAD search form, it opens the actual filed document. Keeps the latest
+    version per company.
+    """
+    url = f"{CVM_BASE}/dfp_cia_aberta_{year}.zip"
+    try:
+        resp = requests.get(url, timeout=90)
+        if resp.status_code != 200:
+            return {}
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
+            head = f"dfp_cia_aberta_{year}.csv"
+            if head not in z.namelist():
+                return {}
+            with z.open(head) as f:
+                idx = pd.read_csv(f, sep=";", encoding="latin-1", low_memory=False)
+        idx = idx[idx["CATEG_DOC"] == "DFP"].sort_values("VERSAO") \
+                 .drop_duplicates("CD_CVM", keep="last")
+        out = {}
+        for _, r in idx.iterrows():
+            link = str(r.get("LINK_DOC", "") or "").strip().replace("http://", "https://")
+            if link:
+                out[int(r["CD_CVM"])] = link
+        return out
+    except Exception:
+        return {}
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
 def get_cvm_company_list(year: int = 2023) -> Optional[pd.DataFrame]:
     """Get list of CVM registered companies with sector info."""
     url = f"https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv"
@@ -247,6 +280,9 @@ def fetch_comparables_cvm(
     if dre is None:
         return pd.DataFrame()
 
+    # Official DFP document links (audit trail) — maps CD_CVM -> LINK_DOC.
+    doc_links = get_cvm_doc_links(year)
+
     # Identify key columns
     name_cols = [c for c in companies.columns if any(k in c.upper()
                  for k in ["DENOM", "NM_CIA", "NOME"])]
@@ -273,14 +309,13 @@ def fetch_comparables_cvm(
         company_nm = str(row[name_col])
         margins = calculate_margins_cvm(dre, company_code, dre_code_col)
         if margins and pli in margins:
-            # No CVM source link yet: the RAD page (frmConsultaExternaCVM.aspx?
-            # codigoCVM=...) is an ASP.NET form that loads EMPTY on a plain GET —
-            # the document grid only fills after a postback ("Consultar"). So a
-            # deep-link opens the company page with NO data (confirmed). The real
-            # per-document URL (frmExibirArquivoIPEExterno?NumeroProtocoloEntrega=)
-            # needs the protocol number, which the open-data DRE CSV doesn't carry
-            # — that's a separate piece. Keep the breakdown (figures are traceable
-            # to the official CVM open data); no broken link.
+            # Audit trail: official CVM DFP document link (downloads the filed
+            # DFP package — PDF + XMLs) from the open-data index. The earlier RAD
+            # search-form link opened empty; this one opens the actual document.
+            try:
+                src_url = doc_links.get(int(float(company_code)), "")
+            except (TypeError, ValueError):
+                src_url = ""
             results.append({
                 "name": company_nm,
                 "value": margins[pli],
@@ -288,7 +323,7 @@ def fetch_comparables_cvm(
                 "net_margin": margins.get("net_margin"),
                 "gross_margin": margins.get("gross_margin"),
                 "source": f"CVM Brasil {year}",
-                "source_url": "",
+                "source_url": src_url,
                 "breakdown": _pli_breakdown_cvm(margins, pli),
             })
 
