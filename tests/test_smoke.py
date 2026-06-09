@@ -87,6 +87,24 @@ def test_cvm_scale_mil():
     assert bd["currency"] == "BRL" and bd["num"] == 200_000
 
 
+def test_cvm_picks_current_exercise_not_comparative():
+    # A year's DFP file carries the current exercise (ÚLTIMO) AND the prior-year
+    # comparative (PENÚLTIMO), both with the same DT_REFER. Must return the
+    # current year — the bug Gabriela caught: Cosan 2025 returned 2024 revenue.
+    df = pd.DataFrame({
+        "CD_CVM": ["1"] * 4,
+        "DT_REFER": ["2025-12-31"] * 4,
+        "DT_FIM_EXERC": ["2024-12-31", "2024-12-31", "2025-12-31", "2025-12-31"],
+        "ORDEM_EXERC": ["PENÚLTIMO", "PENÚLTIMO", "ÚLTIMO", "ÚLTIMO"],
+        "ESCALA_MOEDA": ["MIL"] * 4,
+        "CD_CONTA": ["3.01", "3.07", "3.01", "3.07"],
+        "VL_CONTA": [44000, 9000, 40000, 8000],  # prior comes first in the file
+    })
+    m = calculate_margins_cvm(df, "1", "CD_CVM")
+    assert m["revenue_brl"] == 40000 * 1000      # current (ÚLTIMO), not 44000
+    assert m["ebit_brl"] == 8000 * 1000
+
+
 # ── PDF generation (mixed sources, link + breakdown, manual row) ─────────────
 def test_pdf_generates_bytes():
     comps = [

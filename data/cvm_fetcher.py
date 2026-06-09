@@ -189,9 +189,15 @@ def calculate_margins_cvm(
         if company_dre.empty:
             return None
 
-        # Get most recent exercise
-        date_col = next((c for c in company_dre.columns
-                        if any(k in c.upper() for k in ["DT_FIM", "DT_REFER", "ANO"])), None)
+        # Get most recent exercise. MUST prefer DT_FIM_EXERC (the period END):
+        # a year's DFP file carries BOTH the current exercise (ORDEM=ÚLTIMO, e.g.
+        # 2025-12-31) AND the prior-year comparative (PENÚLTIMO, 2024-12-31), and
+        # both share the same DT_REFER. Picking DT_REFER would not separate them,
+        # leaving .iloc[0] to grab the prior year. DT_FIM_EXERC + max() isolates
+        # the requested year.
+        date_col = (next((c for c in company_dre.columns if "DT_FIM" in c.upper()), None)
+                    or next((c for c in company_dre.columns
+                             if any(k in c.upper() for k in ["DT_REFER", "ANO"])), None))
         val_col = next((c for c in company_dre.columns
                        if any(k in c.upper() for k in ["VL_CONTA", "VALOR"])), None)
         acc_col = next((c for c in company_dre.columns
