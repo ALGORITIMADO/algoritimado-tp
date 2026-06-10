@@ -244,6 +244,36 @@ def generate_report(analysis_data: dict) -> bytes:
     story.append(meta_table)
     story.append(Spacer(1, 0.5*cm))
 
+    # ── FUNCTIONAL ANALYSIS (FAR) — only rendered when the user filled it ─────
+    _far_map = [
+        ("far_functions", "Funções desempenhadas", "Functions performed"),
+        ("far_assets",    "Ativos utilizados",     "Assets employed"),
+        ("far_risks",     "Riscos assumidos",      "Risks assumed"),
+    ]
+    far_items = []
+    for _key, _pt, _en in _far_map:
+        _val = str(analysis_data.get(_key) or "").strip()
+        if _val:
+            far_items.append((_pt if lang == "pt" else _en, _val))
+    if far_items:
+        lbl = "Análise Funcional (FAR)" if lang == "pt" else "Functional Analysis (FAR)"
+        story.append(Paragraph(lbl, S["section"]))
+        if not _is_legacy:
+            intro = ("Perfil funcional da parte testada — funções desempenhadas, ativos "
+                     "utilizados e riscos economicamente significativos assumidos (arts. 13 "
+                     "e 14 da IN RFB 2.161/2023), fundamento da seleção do método (art. 34, I), "
+                     "da parte testada (art. 46, §2º) e do indicador PLI (art. 42, §1º)."
+                     if lang == "pt" else
+                     "Functional profile of the tested party — functions performed, assets "
+                     "employed and economically significant risks assumed (arts. 13–14 of "
+                     "IN RFB 2.161/2023), the basis for selecting the method (art. 34, I), "
+                     "the tested party (art. 46, §2º) and the PLI (art. 42, §1º).")
+            story.append(Paragraph(intro, S["small"]))
+        for _lbl, _val in far_items:
+            _txt = "<b>" + _lbl + ":</b> " + _esc_xml(_val).replace("\n", "<br/>")
+            story.append(Paragraph(_txt, S["body"]))
+        story.append(Spacer(1, 0.4*cm))
+
     # ── COMPLIANCE RESULT ─────────────────────────────────────────────────────
     if iqr and iqr.tested_party_value is not None:
         lbl = "Resultado de Conformidade" if lang == "pt" else "Compliance Result"
@@ -415,6 +445,27 @@ def generate_report(analysis_data: dict) -> bytes:
             ("LEFTPADDING",    (0,0), (-1,-1), 6),
         ]))
         story.append(comp_table)
+
+        # Interim note while the Anexo II country-risk adjustment is not built:
+        # foreign comparables (SEC = US-listed) without adjustment must be flagged
+        # so the report stays honest about what it does NOT do (art. 23).
+        _has_foreign = any("SEC EDGAR" in str(c.get("source", "")) for c in comparables)
+        if _has_foreign:
+            story.append(Spacer(1, 0.15*cm))
+            fnote = ("Nota: o conjunto inclui comparáveis estrangeiros (SEC EDGAR — empresas "
+                     "listadas nos EUA). Nenhum ajuste de comparabilidade por risco-país foi "
+                     "aplicado. O art. 23 da IN RFB 2.161/2023 admite comparáveis estrangeiros "
+                     "desde que realizados ajustes razoavelmente precisos para diferenças "
+                     "materiais; avaliar a materialidade da diferença de risco-país "
+                     "(orientação no Anexo II da IN)."
+                     if lang == "pt" else
+                     "Note: the set includes foreign comparables (SEC EDGAR — US-listed "
+                     "companies). No country-risk comparability adjustment was applied. "
+                     "Art. 23 of IN RFB 2.161/2023 allows foreign comparables provided "
+                     "reasonably accurate adjustments are made for material differences; "
+                     "assess the materiality of the country-risk difference (guidance in "
+                     "Annex II of the IN).")
+            story.append(Paragraph(fnote, S["small"]))
         story.append(Spacer(1, 0.5*cm))
 
     # ── METHODOLOGY ───────────────────────────────────────────────────────────

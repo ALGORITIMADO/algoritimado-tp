@@ -125,3 +125,42 @@ def test_pdf_generates_bytes():
         "iqr_result": iqr, "comparables": comps,
     })
     assert pdf[:4] == b"%PDF" and len(pdf) > 2000
+
+
+# ── FAR section (Tijolo 2 parte 1) ───────────────────────────────────────────
+def test_pdf_far_section():
+    iqr = calculate_iqr([20.0, 15.0, 10.0], tested_party_value=15.0)
+    base = {
+        "language": "pt", "company_name": "Teste", "tested_party_name": "Teste",
+        "method": "MLT", "pli": "Margem Operacional", "fiscal_year": "2024",
+        "iqr_result": iqr,
+        "comparables": [{"name": "A", "value": 20.0, "source": "Annual Report"}],
+    }
+    plain = generate_report(base)
+    # XML chars and newlines in user text must not break ReportLab markup
+    with_far = generate_report({**base,
+        "far_functions": "Distribuição & revenda <local> de produtos",
+        "far_assets": "Centro de distribuição próprio",
+        "far_risks": "Risco cambial\nRisco de estoque"})
+    assert with_far[:4] == b"%PDF" and len(with_far) > len(plain)
+    # Whitespace-only fields are treated as empty (section omitted, no crash)
+    blank_far = generate_report({**base, "far_functions": "   ", "far_risks": "\n"})
+    assert blank_far[:4] == b"%PDF"
+
+
+# ── Foreign-comparables note (interim, until Anexo II adjustment exists) ─────
+def test_pdf_foreign_comparables_note():
+    iqr = calculate_iqr([20.0, 15.0, 10.0], tested_party_value=15.0)
+    base = {
+        "language": "pt", "company_name": "Teste", "tested_party_name": "Teste",
+        "method": "MLT", "pli": "Margem Operacional", "fiscal_year": "2024",
+        "iqr_result": iqr,
+    }
+    domestic_only = generate_report({**base, "comparables": [
+        {"name": "BR Co", "value": 20.0, "source": "CVM Brasil 2024 (DFP)"}]})
+    with_foreign = generate_report({**base, "comparables": [
+        {"name": "US Co", "value": 20.0, "source": "SEC EDGAR 2024 (10-K)"}]})
+    assert domestic_only[:4] == b"%PDF" and with_foreign[:4] == b"%PDF"
+    # The note adds a paragraph, so the foreign variant must be heavier than
+    # the domestic one beyond the small source-label difference.
+    assert len(with_foreign) > len(domestic_only) + 200

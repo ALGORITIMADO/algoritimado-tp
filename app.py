@@ -294,6 +294,71 @@ with st.expander(f"📋 {'Dados da Transação' if is_pt else 'Transaction Data'
     with c3: tested_party_name = st.text_input(L["tested_party"], placeholder="Ex: ABC Brasil Ltda")
     with c4: fiscal_year = st.text_input(L["fiscal_year"], placeholder="2024", value="2024")
 
+# ── FAR — FUNCTIONAL ANALYSIS (optional, feeds the PDF Local File section) ────
+far_title = "🧭 Análise Funcional — FAR (opcional)" if is_pt else "🧭 Functional Analysis — FAR (optional)"
+with st.expander(far_title, expanded=False):
+    st.markdown(
+        ("Descreva o perfil funcional da **parte testada** (arts. 13 e 14 da IN RFB "
+         "2.161/2023). A análise funcional é o fundamento que justifica as escolhas "
+         "técnicas do benchmark: o **método** mais apropriado (art. 34, I), a seleção "
+         "da **parte testada** — em geral a de perfil funcional menos complexo "
+         "(art. 46, §2º) — e o **indicador PLI** (art. 42, §1º). "
+         "Os campos preenchidos entram no relatório PDF."
+         if is_pt else
+         "Describe the functional profile of the **tested party** (arts. 13–14 of "
+         "IN RFB 2.161/2023). The functional analysis is the foundation that justifies "
+         "the technical choices of the benchmark: the most appropriate **method** "
+         "(art. 34, I), the selection of the **tested party** — generally the one with "
+         "the less complex functional profile (art. 46, §2º) — and the **PLI** "
+         "(art. 42, §1º). Filled fields are included in the PDF report.")
+    )
+    far_functions = st.text_area(
+        "Funções desempenhadas" if is_pt else "Functions performed",
+        placeholder=("Ex: Distribuição e revenda de produtos importados da matriz; "
+                     "marketing local; suporte pós-venda"
+                     if is_pt else
+                     "E.g.: Distribution and resale of goods imported from the parent; "
+                     "local marketing; after-sales support"),
+        key="far_functions", height=80)
+    far_assets = st.text_area(
+        "Ativos utilizados" if is_pt else "Assets employed",
+        placeholder=("Ex: Centro de distribuição próprio; carteira de clientes local; "
+                     "sem intangíveis relevantes"
+                     if is_pt else
+                     "E.g.: Own distribution center; local customer base; "
+                     "no significant intangibles"),
+        key="far_assets", height=80)
+    far_risks = st.text_area(
+        "Riscos assumidos" if is_pt else "Risks assumed",
+        placeholder=("Ex: Risco de estoque limitado — devolução à matriz prevista em contrato "
+                     "e praticada; risco cambial nas importações, absorvido pela empresa "
+                     "brasileira, que decide o hedge e tem caixa para suportá-lo"
+                     if is_pt else
+                     "E.g.: Limited inventory risk — returns to parent contractually agreed "
+                     "and practiced; FX risk on imports, absorbed by the Brazilian entity, "
+                     "which decides hedging and has the cash to bear it"),
+        help=("A norma considera o risco assumido por quem exerce o **controle** sobre ele "
+              "E possui **capacidade financeira** para assumi-lo, prevalecendo a conduta "
+              "efetiva sobre o contrato (art. 14 da IN RFB 2.161/2023). Para cada risco "
+              "relevante, diga quem decide/controla e quem absorve o resultado — não apenas liste."
+              if is_pt else
+              "The rule allocates each risk to the party that exercises **control** over it "
+              "AND has the **financial capacity** to assume it, with actual conduct prevailing "
+              "over the contract (art. 14 of IN RFB 2.161/2023). For each relevant risk, state "
+              "who decides/controls it and who absorbs the outcome — don't just list."),
+        key="far_risks", height=80)
+    st.caption(
+        ("Cobertura: estes campos atendem o conteúdo do Arquivo Local **simplificado** "
+         "(art. 61 — transações de R$ 15 mi a R$ 500 mi). Para o Arquivo Local **completo** "
+         "(≥ R$ 500 mi), a norma exige também a análise funcional das contrapartes e dos "
+         "comparáveis (art. 59), não coberta por este relatório."
+         if is_pt else
+         "Coverage: these fields meet the content of the **simplified** Local File "
+         "(art. 61 — transactions from R$15M to R$500M). The **complete** Local File "
+         "(≥ R$500M) also requires the functional analysis of the counterparties and of "
+         "the comparables (art. 59), not covered by this report.")
+    )
+
 # ── PLI SELECTION ─────────────────────────────────────────────────────────────
 pli_option = "operating_margin"
 pli_label_display = PLI_OPTIONS["operating_margin"]
@@ -774,7 +839,10 @@ if st.button(L["calc_btn"], width="stretch"):
                 method=method.split("—")[0].strip(),
                 pli=pli_label_display,
                 analysis_date=datetime.now().strftime("%d/%m/%Y"),
-                language="pt" if is_pt else "en")
+                language="pt" if is_pt else "en",
+                far_functions=(far_functions or "").strip(),
+                far_assets=(far_assets or "").strip(),
+                far_risks=(far_risks or "").strip())
             _event_payload = {
                 "method": method.split("—")[0].strip(),
                 "pli": pli_option,
@@ -949,7 +1017,7 @@ if "iqr_result" in st.session_state:
 
     st.divider()
     st.markdown(f"### {'📄 Relatório PDF' if is_pt else '📄 PDF Report'}")
-    st.markdown(f'<div class="info-box">{"Relatório formatado conforme IN RFB 2.161/2023 — inclui dados da transação, intervalo IQR, comparáveis e nota metodológica." if is_pt else "Report formatted per IN RFB 2.161/2023 — includes transaction data, IQR range, comparables and methodology note."}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="info-box">{"Relatório formatado conforme IN RFB 2.161/2023 — inclui dados da transação, análise funcional (FAR, se preenchida), intervalo IQR, comparáveis e nota metodológica." if is_pt else "Report formatted per IN RFB 2.161/2023 — includes transaction data, functional analysis (FAR, if filled), IQR range, comparables and methodology note."}</div>', unsafe_allow_html=True)
     try:
         pdf_bytes = generate_report({**meta, "iqr_result": iqr, "comparables": vc,
                                       "tested_party_value": iqr.tested_party_value})
