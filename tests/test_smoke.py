@@ -7,9 +7,10 @@ Runs automatically in CI on every push/PR (.github/workflows/ci.yml).
 import pandas as pd
 
 from calculations.base import calculate_iqr
+from calculations.country_risk import adjust_comparable_margin
 from data.edgar_fetcher import extract_financials, _pli_breakdown
 from data.cvm_fetcher import calculate_margins_cvm, _pli_breakdown_cvm
-from reports.pdf_generator import generate_report, _breakdown_text
+from reports.pdf_generator import generate_report, _breakdown_text, _cr_adjustment_text
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -164,3 +165,74 @@ def test_pdf_foreign_comparables_note():
     # The note adds a paragraph, so the foreign variant must be heavier than
     # the domestic one beyond the small source-label difference.
     assert len(with_foreign) > len(domestic_only) + 200
+
+
+# ── Country-risk adjustment — Anexo II IN 2.161/2023 ─────────────────────────
+def test_anexo_ii_official_example():
+    """The Receita's own worked example (Anexo II, IN 2.161/2023) as fixture:
+    differential 3.73% (5.19 − 1.46) applied to 7 comparables. Official table
+    rounds half-up to 2 decimals; we compare with ±0.0051 tolerance."""
+    rows = {  # name: (revenue, op_income, capital_employed, official_adj_oi, official_adj_ros)
+        "A": (1000.00, 30.00, 100, 33.73, 3.37),
+        "B": (1500.00, 50.00, 120, 54.48, 3.63),
+        "C": (2300.00, 80.00, 150, 85.60, 3.72),
+        "D": (1050.00, 40.00, 130, 44.85, 4.27),
+        "E": (4000.00, 200.00, 200, 207.46, 5.19),
+        "F": (2000.00, 110.00, 300, 121.19, 6.06),
+        "G": (3000.00, 200.00, 150, 205.60, 6.85),
+    }
+    for name, (rev, oi, ce, adj_oi_official, adj_ros_official) in rows.items():
+        r = adjust_comparable_margin(oi, rev, ce, 5.19, 1.46)
+        assert abs(r["differential_pct"] - 3.73) < 1e-9, name
+        assert abs(r["adjusted_operating_income"] - adj_oi_official) <= 0.0051, name
+        assert abs(r["adjusted_margin"] - adj_ros_official) <= 0.0051, name
+
+
+def test_anexo_ii_sign_preserved():
+    # Comparable in a riskier country than the tested party → negative adjustment.
+    r = adjust_comparable_margin(30.0, 1000.0, 100, 1.46, 5.19)
+    assert r["adjustment"] < 0
+    assert r["adjusted_margin"] < r["margin_before"]
+
+
+def test_capital_employed_extracted_same_year():
+    facts = _facts()
+    facts["facts"]["us-gaap"].update({
+        "PropertyPlantAndEquipmentNet": {"units": {"USD": [
+            _dp("2023-12-31", 350, "acc-2023"), _dp("2024-12-31", 400, "acc-2024")]}},
+        "AssetsCurrent": {"units": {"USD": [
+            _dp("2023-12-31", 280, "acc-2023"), _dp("2024-12-31", 300, "acc-2024")]}},
+        "LiabilitiesCurrent": {"units": {"USD": [
+            _dp("2023-12-31", 190, "acc-2023"), _dp("2024-12-31", 180, "acc-2024")]}},
+    })
+    fin = extract_financials(facts, target_year=2024)
+    assert fin["capital_employed_usd"] == 400 + (300 - 180)   # year-aligned, not mixed
+    fin23 = extract_financials(facts, target_year=2023)
+    assert fin23["capital_employed_usd"] == 350 + (280 - 190)
+
+
+def test_pdf_with_country_risk_adjustment():
+    iqr = calculate_iqr([24.0, 20.0, 16.0], tested_party_value=20.0)
+    cr = adjust_comparable_margin(200e6, 1000e6, 500e6, 3.24, 0.23)
+    pdf = generate_report({
+        "language": "pt", "company_name": "Teste", "tested_party_name": "Teste",
+        "method": "MLT", "pli": "Margem Operacional", "fiscal_year": "2024",
+        "iqr_result": iqr,
+        "country_risk": {"applied": True, "crp_tested": 3.24, "crp_comp": 0.23,
+                         "source": "Damodaran — NYU Stern (jan/2026)",
+                         "n_adjusted": 1, "n_foreign_skipped": 1},
+        "comparables": [
+            {"name": "US Adjusted Co", "value": round(cr["adjusted_margin"], 4),
+             "source": "SEC EDGAR 2024 (10-K)",
+             "source_url": "https://www.sec.gov/x",
+             "breakdown": {"kind": "operating", "num": 200e6, "den": 1000e6,
+                           "margin": 20.0, "currency": "USD"},
+             "cr_adjustment": {**cr, "currency": "USD"}},
+            {"name": "US Skipped Co", "value": 24.0, "source": "SEC EDGAR 2024 (10-K)"},
+            {"name": "BR Co", "value": 16.0, "source": "CVM Brasil 2024 (DFP)"},
+        ],
+    })
+    assert pdf[:4] == b"%PDF" and len(pdf) > 2000
+    # The audit-trail line itself: official-style math, localized
+    txt = _cr_adjustment_text({**cr, "currency": "USD"}, "pt")
+    assert "Anexo II" in txt and "3,24%" in txt and "0,23%" in txt and "capital empregado" in txt

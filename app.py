@@ -650,6 +650,11 @@ with st.expander(ai_label, expanded=False):
                         # rides along too, when present (SEC rows only today).
                         if isinstance(_bd, dict):
                             new_comp["breakdown"] = _bd
+                        # capital employed (PP&E + working capital, same filing)
+                        # enables the Anexo II country-risk adjustment (SEC only).
+                        _ce = row.get("capital_employed", None)
+                        if _ce is not None and pd.notna(_ce):
+                            new_comp["capital_employed"] = float(_ce)
                         st.session_state.comparables.append(new_comp)
                         added += 1
                 st.success(
@@ -704,6 +709,74 @@ with col_clr:
         st.session_state.comparables = [c for c in st.session_state.comparables if c["value"] != 0.0 or c["name"].strip() != ""]
         st.rerun()
 
+# ── COUNTRY-RISK ADJUSTMENT (Anexo II IN 2.161) ──────────────────────────────
+# Only offered where the Anexo II example applies directly: TNMM on operating
+# margin, adjusting the comparable's operating profit. Other PLIs/methods are
+# not covered by the Anexo and are deliberately not extrapolated.
+cr_apply = False
+cr_tested = 3.24
+cr_comp = 0.23
+cr_source = ""
+if "MLT" in method and pli_option == "operating_margin":
+    cr_title = ("🌍 Ajuste de risco-país — Anexo II da IN 2.161 (opcional)" if is_pt
+                else "🌍 Country-risk adjustment — Annex II of IN 2.161 (optional)")
+    with st.expander(cr_title, expanded=False):
+        st.markdown(
+            ("Quando o conjunto usa **comparáveis estrangeiros** (ex.: SEC EDGAR) para "
+             "uma parte testada brasileira, o Anexo II da IN RFB 2.161/2023 orienta um "
+             "ajuste de comparabilidade: **(prêmio de risco-país da parte testada − "
+             "prêmio do país do comparável) × capital empregado**, somado ao lucro "
+             "operacional do comparável. É uma *possível abordagem* admitida pela "
+             "norma (art. 23, §4º), não uma obrigação — aplique quando a diferença "
+             "de risco-país for material."
+             if is_pt else
+             "When the set uses **foreign comparables** (e.g. SEC EDGAR) for a Brazilian "
+             "tested party, Annex II of IN RFB 2.161/2023 provides a comparability "
+             "adjustment: **(country-risk premium of the tested party − premium of the "
+             "comparable's country) × capital employed**, added to the comparable's "
+             "operating profit. It is a *possible approach* allowed by the rule "
+             "(art. 23, §4º), not an obligation — apply it when the country-risk "
+             "difference is material.")
+        )
+        cr_apply = st.checkbox(
+            "Aplicar ajuste aos comparáveis da SEC" if is_pt
+            else "Apply adjustment to SEC comparables",
+            value=False, key="cr_apply")
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            cr_tested = st.number_input(
+                ("Prêmio risco-país — parte testada (%)" if is_pt
+                 else "Country-risk premium — tested party (%)"),
+                value=3.24, step=0.01, format="%.2f", key="cr_tested")
+        with cc2:
+            cr_comp = st.number_input(
+                ("Prêmio risco-país — país dos comparáveis (%)" if is_pt
+                 else "Country-risk premium — comparables' country (%)"),
+                value=0.23, step=0.01, format="%.2f", key="cr_comp")
+        cr_source = st.text_input(
+            "Fonte dos prêmios" if is_pt else "Premium source",
+            value="Damodaran — NYU Stern (jan/2026): Brasil 3,24% · EUA 0,23%",
+            key="cr_source")
+        st.caption(
+            ("Padrão: prêmios de Damodaran (NYU Stern), tabela pública atualizada "
+             "~2x/ano — Brasil 3,24% e EUA 0,23% em jan/2026. Edite os valores e a "
+             "fonte se preferir outra referência; a fonte informada é citada no PDF. "
+             "O ajuste alcança apenas comparáveis da SEC com capital empregado "
+             "POSITIVO disponível no filing (imobilizado líquido + ativo circulante − "
+             "passivo circulante); capital empregado negativo reduziria a margem do "
+             "comparável de forma indefensável e não é ajustado. Comparáveis da CVM "
+             "são domésticos e não são ajustados."
+             if is_pt else
+             "Default: Damodaran (NYU Stern) premiums, public table updated ~2x/year — "
+             "Brazil 3.24% and US 0.23% as of Jan/2026. Edit the values and source to "
+             "use a different reference; the stated source is cited in the PDF. The "
+             "adjustment reaches only SEC comparables whose filing provides POSITIVE "
+             "capital employed (net PP&E + current assets − current liabilities); "
+             "negative capital employed would indefensibly lower the comparable's "
+             "margin and is not adjusted. CVM comparables are domestic and are not "
+             "adjusted.")
+        )
+
 # ── TESTED PARTY ──────────────────────────────────────────────────────────────
 st.divider()
 include_tested = st.checkbox(L["include_tested"], value=True)
@@ -747,6 +820,50 @@ if st.button(L["calc_btn"], width="stretch"):
                 f"Calculation will proceed with {len(valid_comps)} comparables, but statistical robustness and legal defensibility may be reduced. "
                 f"Consider adding more comparables before using this result in official documentation."
             )
+        # Anexo II country-risk adjustment (TNMM/operating margin only). Works on
+        # COPIES of the rows: the session keeps unadjusted values, so recalculating
+        # never compounds the adjustment.
+        cr_meta = None
+        if cr_apply and "MLT" in method and pli_option == "operating_margin":
+            from calculations.country_risk import adjust_comparable_margin
+            valid_comps = [dict(c) for c in valid_comps]
+            n_adj, n_foreign_skipped = 0, 0
+            for c in valid_comps:
+                if "SEC EDGAR" not in str(c.get("source", "")):
+                    continue  # CVM/manual = domestic or unknown → never adjusted
+                bd = c.get("breakdown")
+                ce = c.get("capital_employed")
+                # Adjust only with POSITIVE capital employed: the Anexo II formula
+                # presumes CE > 0. Negative CE (e.g. deeply negative working
+                # capital) would mechanically LOWER the comparable's margin —
+                # indefensible. NaN also fails the > 0 test. Both stay unadjusted
+                # and are disclosed in the PDF note.
+                if isinstance(bd, dict) and bd.get("kind") == "operating" \
+                        and ce is not None and ce > 0:
+                    adj = adjust_comparable_margin(
+                        bd["num"], bd["den"], ce, cr_tested, cr_comp)
+                    c["value_unadjusted"] = c["value"]
+                    c["value"] = round(adj["adjusted_margin"], 4)
+                    c["cr_adjustment"] = {**adj, "currency": bd.get("currency", "USD")}
+                    n_adj += 1
+                else:
+                    n_foreign_skipped += 1
+            cr_meta = {"applied": True, "crp_tested": cr_tested, "crp_comp": cr_comp,
+                       "source": cr_source, "n_adjusted": n_adj,
+                       "n_foreign_skipped": n_foreign_skipped}
+            if n_adj:
+                st.info(
+                    (f"🌍 Ajuste de risco-país aplicado a {n_adj} comparável(is) da SEC "
+                     f"(diferencial {cr_tested - cr_comp:.2f} p.p.)."
+                     + (f" {n_foreign_skipped} comparável(is) da SEC sem capital empregado no filing — não ajustado(s)."
+                        if n_foreign_skipped else ""))
+                    if is_pt else
+                    (f"🌍 Country-risk adjustment applied to {n_adj} SEC comparable(s) "
+                     f"(differential {cr_tested - cr_comp:.2f} p.p.)."
+                     + (f" {n_foreign_skipped} SEC comparable(s) without capital employed in the filing — not adjusted."
+                        if n_foreign_skipped else ""))
+                )
+
         vals = [c["value"] for c in valid_comps]
         tv = tested_value if include_tested else None
         try:
@@ -842,7 +959,8 @@ if st.button(L["calc_btn"], width="stretch"):
                 language="pt" if is_pt else "en",
                 far_functions=(far_functions or "").strip(),
                 far_assets=(far_assets or "").strip(),
-                far_risks=(far_risks or "").strip())
+                far_risks=(far_risks or "").strip(),
+                country_risk=cr_meta)
             _event_payload = {
                 "method": method.split("—")[0].strip(),
                 "pli": pli_option,

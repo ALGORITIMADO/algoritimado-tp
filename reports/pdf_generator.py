@@ -159,6 +159,33 @@ def _breakdown_text(bd, lang):
         n=_fmt_mi(bd["num"], lang), d=_fmt_mi(bd["den"], lang))
 
 
+def _pct(v, lang):
+    """Percentage with 2 decimals, localized decimal separator."""
+    s = "{:.2f}".format(v)
+    return (s.replace(".", ",") if lang == "pt" else s) + "%"
+
+
+def _cr_adjustment_text(cr, lang):
+    """One-line audit trail for the Anexo II country-risk adjustment:
+    (CRP tested − CRP comparable) × capital employed = adjustment, added to
+    operating income → margin before → after. Full precision upstream;
+    display rounding only (half-up at 2 decimals matches the official table)."""
+    cur = {"USD": "US$", "BRL": "R$"}.get(cr.get("currency", "USD"), "")
+    unit = "mi" if lang == "pt" else "M"
+    ce = "{} {} {}".format(cur, _fmt_mi(cr["capital_employed"], lang), unit)
+    adj = "{}{} {} {}".format("+" if cr["adjustment"] >= 0 else "−",
+                              cur, _fmt_mi(abs(cr["adjustment"]), lang), unit)
+    if lang == "pt":
+        return ("Ajuste risco-país (Anexo II): ({} − {}) × capital empregado {} "
+                "= {} no lucro operacional → margem {} → {}").format(
+            _pct(cr["crp_tested_pct"], lang), _pct(cr["crp_comparable_pct"], lang),
+            ce, adj, _pct(cr["margin_before"], lang), _pct(cr["adjusted_margin"], lang))
+    return ("Country-risk adj. (Annex II): ({} − {}) × capital employed {} "
+            "= {} to operating income → margin {} → {}").format(
+        _pct(cr["crp_tested_pct"], lang), _pct(cr["crp_comparable_pct"], lang),
+        ce, adj, _pct(cr["margin_before"], lang), _pct(cr["adjusted_margin"], lang))
+
+
 def generate_report(analysis_data: dict) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -418,6 +445,12 @@ def generate_report(analysis_data: dict) -> bytes:
             if isinstance(bd, dict):
                 name_html += ('<br/><font size="6.5" color="#8A8A8A">'
                               + _esc_xml(_breakdown_text(bd, lang)) + '</font>')
+            # Country-risk adjustment line (Anexo II): show the full math —
+            # differential × capital employed = adjustment, margin before → after.
+            cr = c.get("cr_adjustment")
+            if isinstance(cr, dict):
+                name_html += ('<br/><font size="6.5" color="#1B4332">'
+                              + _esc_xml(_cr_adjustment_text(cr, lang)) + '</font>')
             comp_rows.append([
                 str(i),
                 # Wrap long names (e.g. "LIFEMED INDUSTRIAL DE EQUIP. E ART.
@@ -446,11 +479,47 @@ def generate_report(analysis_data: dict) -> bytes:
         ]))
         story.append(comp_table)
 
-        # Interim note while the Anexo II country-risk adjustment is not built:
-        # foreign comparables (SEC = US-listed) without adjustment must be flagged
-        # so the report stays honest about what it does NOT do (art. 23).
+        # Foreign-comparables note. Two states: adjustment applied (describe the
+        # method, premiums and source — Anexo II) or not applied (flag honestly
+        # that art. 23 expects adjustments for material differences).
         _has_foreign = any("SEC EDGAR" in str(c.get("source", "")) for c in comparables)
-        if _has_foreign:
+        _cr_meta = analysis_data.get("country_risk") or {}
+        _n_adj = _cr_meta.get("n_adjusted", 0)
+        if _has_foreign and _n_adj:
+            story.append(Spacer(1, 0.15*cm))
+            _src = str(_cr_meta.get("source") or "").strip()
+            if lang == "pt":
+                fnote = ("Nota: ajuste de comparabilidade por risco-país aplicado a {} "
+                         "comparável(is) estrangeiro(s) (SEC EDGAR), conforme orientação do "
+                         "Anexo II da IN RFB 2.161/2023 (art. 23, §4º): diferencial de prêmio "
+                         "de risco-país ({} − {}) multiplicado pelo capital empregado e somado "
+                         "ao lucro operacional do comparável. Capital empregado = imobilizado "
+                         "líquido + ativo circulante − passivo circulante, do mesmo filing."
+                         ).format(_n_adj, _pct(_cr_meta.get("crp_tested", 0), lang),
+                                  _pct(_cr_meta.get("crp_comp", 0), lang))
+                if _src:
+                    fnote += " Fonte dos prêmios: {}.".format(_src)
+                if _cr_meta.get("n_foreign_skipped"):
+                    fnote += (" {} comparável(is) da SEC sem capital empregado positivo "
+                              "disponível no filing permanecem sem ajuste."
+                              ).format(_cr_meta["n_foreign_skipped"])
+            else:
+                fnote = ("Note: country-risk comparability adjustment applied to {} foreign "
+                         "comparable(s) (SEC EDGAR) per the guidance in Annex II of IN RFB "
+                         "2.161/2023 (art. 23, §4º): country-risk premium differential "
+                         "({} − {}) multiplied by capital employed and added to the "
+                         "comparable's operating income. Capital employed = net PP&E + "
+                         "current assets − current liabilities, from the same filing."
+                         ).format(_n_adj, _pct(_cr_meta.get("crp_tested", 0), lang),
+                                  _pct(_cr_meta.get("crp_comp", 0), lang))
+                if _src:
+                    fnote += " Premium source: {}.".format(_src)
+                if _cr_meta.get("n_foreign_skipped"):
+                    fnote += (" {} SEC comparable(s) without positive capital employed "
+                              "available in the filing remain unadjusted."
+                              ).format(_cr_meta["n_foreign_skipped"])
+            story.append(Paragraph(_esc_xml(fnote), S["small"]))
+        elif _has_foreign:
             story.append(Spacer(1, 0.15*cm))
             fnote = ("Nota: o conjunto inclui comparáveis estrangeiros (SEC EDGAR — empresas "
                      "listadas nos EUA). Nenhum ajuste de comparabilidade por risco-país foi "

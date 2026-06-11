@@ -258,6 +258,19 @@ def extract_financials(facts: Dict, target_year: Optional[int] = None) -> Option
     if op_income is not None and da is not None:
         result["da_usd"] = da
         result["ebitda_margin"] = round((op_income + da) / revenue * 100, 4)
+
+    # Balance-sheet items for the Anexo II country-risk adjustment:
+    # Capital Employed = operating fixed assets (proxied by net PP&E) + working
+    # capital (current assets − current liabilities). Same year as the income
+    # items — comparability requires a consistent fiscal year.
+    ppe = _latest_annual(gaap, ["PropertyPlantAndEquipmentNet"], target_year=target_year)
+    ca  = _latest_annual(gaap, ["AssetsCurrent"], target_year=target_year)
+    cl  = _latest_annual(gaap, ["LiabilitiesCurrent"], target_year=target_year)
+    if ppe is not None and ca is not None and cl is not None:
+        result["ppe_usd"] = ppe
+        result["current_assets_usd"] = ca
+        result["current_liabilities_usd"] = cl
+        result["capital_employed_usd"] = ppe + (ca - cl)
     return result if len(result) > 1 else None
 
 
@@ -346,6 +359,7 @@ def fetch_comparables_edgar(
                     "source": "SEC EDGAR",
                     "source_url": src_url,
                     "breakdown": _pli_breakdown(fin, pli),
+                    "capital_employed": fin.get("capital_employed_usd"),
                 })
         time.sleep(0.1)
 
