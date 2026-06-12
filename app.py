@@ -710,13 +710,16 @@ with col_clr:
         st.rerun()
 
 # ── COUNTRY-RISK ADJUSTMENT (Anexo II IN 2.161) ──────────────────────────────
-# Only offered where the Anexo II example applies directly: TNMM on operating
-# margin, adjusting the comparable's operating profit. Other PLIs/methods are
-# not covered by the Anexo and are deliberately not extrapolated.
+# The rule treats country risk as a general comparability adjustment (art. 32,
+# §2º, VI — method-agnostic). What is MLT-specific is only the OFFICIAL worked
+# mechanic in Anexo II (add differential×capital employed to operating income).
+# The app automates exactly that mechanic; adapting it to gross-margin PLIs has
+# no official example and stays manual/roadmap.
 cr_apply = False
 cr_tested = 3.24
 cr_comp = 0.23
 cr_source = ""
+cr_justification = ""
 if "MLT" in method and pli_option == "operating_margin":
     cr_title = ("🌍 Ajuste de risco-país — Anexo II da IN 2.161 (opcional)" if is_pt
                 else "🌍 Country-risk adjustment — Annex II of IN 2.161 (optional)")
@@ -757,23 +760,55 @@ if "MLT" in method and pli_option == "operating_margin":
             "Fonte dos prêmios" if is_pt else "Premium source",
             value="Damodaran — NYU Stern (jan/2026): Brasil 3,24% · EUA 0,23%",
             key="cr_source")
+        cr_justification = st.text_area(
+            ("Justificativa do ajuste — materialidade e confiabilidade (art. 32)"
+             if is_pt else
+             "Adjustment rationale — materiality and reliability (art. 32)"),
+            placeholder=("Deixe em branco para usar a justificativa padrão no PDF, ou "
+                         "escreva a sua (por que a diferença de risco-país é material "
+                         "neste caso e por que o ajuste melhora a comparabilidade)."
+                         if is_pt else
+                         "Leave blank to use the default rationale in the PDF, or write "
+                         "your own (why the country-risk difference is material here and "
+                         "why the adjustment improves comparability)."),
+            help=("O art. 32, I e V da IN exige demonstrar a NECESSIDADE de cada ajuste "
+                  "e que ele aumenta a confiabilidade da comparação — não basta mostrar "
+                  "a conta. Este texto entra no PDF como justificativa do ajuste."
+                  if is_pt else
+                  "Art. 32, I and V require demonstrating the NECESSITY of each "
+                  "adjustment and that it increases the reliability of the comparison — "
+                  "showing the math is not enough. This text goes into the PDF as the "
+                  "adjustment rationale."),
+            key="cr_just", height=80)
         st.caption(
-            ("Padrão: prêmios de Damodaran (NYU Stern), tabela pública atualizada "
-             "~2x/ano — Brasil 3,24% e EUA 0,23% em jan/2026. Edite os valores e a "
-             "fonte se preferir outra referência; a fonte informada é citada no PDF. "
-             "O ajuste alcança apenas comparáveis da SEC com capital empregado "
-             "POSITIVO disponível no filing (imobilizado líquido + ativo circulante − "
-             "passivo circulante); capital empregado negativo reduziria a margem do "
-             "comparável de forma indefensável e não é ajustado. Comparáveis da CVM "
+            ("**Escopo:** a norma trata o risco-país como ajuste geral de "
+             "comparabilidade (art. 32, §2º, VI), não restrito ao MLT — mas a única "
+             "mecânica oficialmente exemplificada (Anexo II) é a de margem "
+             "operacional, que é a que o app automatiza; para outros métodos/PLIs "
+             "não há exemplo oficial e a adaptação exige julgamento profissional. "
+             "**Fonte do prêmio:** a RFB não prescreve fonte (o exemplo oficial usa "
+             "valores hipotéticos); Damodaran (NYU Stern) é fonte pública e citável "
+             "usada como padrão editável — documente a escolha. **Capital empregado:** "
+             "a norma não define 'ativos fixos operacionais'; o app adota imobilizado "
+             "líquido (PP&E) como aproximação, sem intangíveis operacionais nem ativos "
+             "de direito de uso — definição declarada no PDF. Só comparáveis da SEC "
+             "com capital empregado POSITIVO são ajustados; para os demais, avalie "
+             "mantê-los sem ajuste ou excluí-los (art. 32, IV). Comparáveis da CVM "
              "são domésticos e não são ajustados."
              if is_pt else
-             "Default: Damodaran (NYU Stern) premiums, public table updated ~2x/year — "
-             "Brazil 3.24% and US 0.23% as of Jan/2026. Edit the values and source to "
-             "use a different reference; the stated source is cited in the PDF. The "
-             "adjustment reaches only SEC comparables whose filing provides POSITIVE "
-             "capital employed (net PP&E + current assets − current liabilities); "
-             "negative capital employed would indefensibly lower the comparable's "
-             "margin and is not adjusted. CVM comparables are domestic and are not "
+             "**Scope:** the rule treats country risk as a general comparability "
+             "adjustment (art. 32, §2º, VI), not restricted to TNMM — but the only "
+             "officially worked mechanic (Annex II) is the operating-margin one, "
+             "which is what the app automates; other methods/PLIs have no official "
+             "example and require professional judgment. **Premium source:** RFB does "
+             "not prescribe a source (the official example uses hypothetical values); "
+             "Damodaran (NYU Stern) is a public, citable source used as an editable "
+             "default — document your choice. **Capital employed:** the rule does not "
+             "define 'operating fixed assets'; the app adopts net PP&E as a proxy, "
+             "excluding operating intangibles and right-of-use assets — definition "
+             "disclosed in the PDF. Only SEC comparables with POSITIVE capital "
+             "employed are adjusted; for the rest, assess keeping them unadjusted or "
+             "excluding them (art. 32, IV). CVM comparables are domestic and are not "
              "adjusted.")
         )
 
@@ -850,17 +885,24 @@ if st.button(L["calc_btn"], width="stretch"):
                     n_foreign_skipped += 1
             cr_meta = {"applied": True, "crp_tested": cr_tested, "crp_comp": cr_comp,
                        "source": cr_source, "n_adjusted": n_adj,
-                       "n_foreign_skipped": n_foreign_skipped}
+                       "n_foreign_skipped": n_foreign_skipped,
+                       "justification": (cr_justification or "").strip()}
             if n_adj:
                 st.info(
                     (f"🌍 Ajuste de risco-país aplicado a {n_adj} comparável(is) da SEC "
                      f"(diferencial {cr_tested - cr_comp:.2f} p.p.)."
-                     + (f" {n_foreign_skipped} comparável(is) da SEC sem capital empregado no filing — não ajustado(s)."
+                     + (f" ⚠️ {n_foreign_skipped} comparável(is) da SEC sem capital "
+                        f"empregado positivo no filing — mantido(s) sem ajuste; avalie "
+                        f"se devem permanecer no conjunto ou ser excluídos (art. 32, IV "
+                        f"da IN; OCDE TPG 3.51)."
                         if n_foreign_skipped else ""))
                     if is_pt else
                     (f"🌍 Country-risk adjustment applied to {n_adj} SEC comparable(s) "
                      f"(differential {cr_tested - cr_comp:.2f} p.p.)."
-                     + (f" {n_foreign_skipped} SEC comparable(s) without capital employed in the filing — not adjusted."
+                     + (f" ⚠️ {n_foreign_skipped} SEC comparable(s) without positive "
+                        f"capital employed in the filing — kept unadjusted; assess "
+                        f"whether they should remain in the set or be excluded "
+                        f"(art. 32, IV; OECD TPG 3.51)."
                         if n_foreign_skipped else ""))
                 )
 
@@ -986,6 +1028,25 @@ if "iqr_result" in st.session_state:
 
     st.divider()
     st.markdown(f"## {L['results_title']}")
+
+    # Country-risk adjustment audit table: margin before → adjustment → after,
+    # per adjusted comparable (same math the PDF shows, visible on screen).
+    _adj_rows = [c for c in vc if isinstance(c.get("cr_adjustment"), dict)]
+    if _adj_rows:
+        with st.expander(
+                f"🌍 {'Ajuste de risco-país aplicado — conferência' if is_pt else 'Country-risk adjustment applied — audit'}",
+                expanded=False):
+            st.dataframe(pd.DataFrame([{
+                ("Empresa" if is_pt else "Company"): c["name"],
+                ("Margem antes (%)" if is_pt else "Margin before (%)"):
+                    f"{c['cr_adjustment']['margin_before']:.4f}",
+                ("Capital empregado (mi)" if is_pt else "Capital employed (M)"):
+                    f"{c['cr_adjustment']['capital_employed']/1e6:,.0f}",
+                ("Ajuste (mi)" if is_pt else "Adjustment (M)"):
+                    f"{c['cr_adjustment']['adjustment']/1e6:+,.0f}",
+                ("Margem ajustada (%)" if is_pt else "Adjusted margin (%)"):
+                    f"{c['cr_adjustment']['adjusted_margin']:.4f}",
+            } for c in _adj_rows]), hide_index=True, width="stretch")
 
     if iqr.tested_party_value is not None:
         if iqr.is_arms_length:

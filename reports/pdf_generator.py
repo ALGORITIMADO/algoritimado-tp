@@ -488,37 +488,76 @@ def generate_report(analysis_data: dict) -> bytes:
         if _has_foreign and _n_adj:
             story.append(Spacer(1, 0.15*cm))
             _src = str(_cr_meta.get("source") or "").strip()
+            _crp_t = _pct(_cr_meta.get("crp_tested", 0), lang)
+            _crp_c = _pct(_cr_meta.get("crp_comp", 0), lang)
+            _diff = _pct(_cr_meta.get("crp_tested", 0) - _cr_meta.get("crp_comp", 0), lang)
             if lang == "pt":
                 fnote = ("Nota: ajuste de comparabilidade por risco-país aplicado a {} "
                          "comparável(is) estrangeiro(s) (SEC EDGAR), conforme orientação do "
                          "Anexo II da IN RFB 2.161/2023 (art. 23, §4º): diferencial de prêmio "
                          "de risco-país ({} − {}) multiplicado pelo capital empregado e somado "
-                         "ao lucro operacional do comparável. Capital empregado = imobilizado "
-                         "líquido + ativo circulante − passivo circulante, do mesmo filing."
-                         ).format(_n_adj, _pct(_cr_meta.get("crp_tested", 0), lang),
-                                  _pct(_cr_meta.get("crp_comp", 0), lang))
+                         "ao lucro operacional do comparável. Definição operacional adotada: "
+                         "capital empregado = imobilizado líquido (PP&E) + ativo circulante − "
+                         "passivo circulante, do mesmo filing — a norma não define 'ativos "
+                         "fixos operacionais'; intangíveis operacionais e ativos de direito "
+                         "de uso não foram incluídos."
+                         ).format(_n_adj, _crp_t, _crp_c)
                 if _src:
-                    fnote += " Fonte dos prêmios: {}.".format(_src)
+                    fnote += " Fonte dos prêmios: {} (a RFB não prescreve fonte).".format(_src)
                 if _cr_meta.get("n_foreign_skipped"):
                     fnote += (" {} comparável(is) da SEC sem capital empregado positivo "
-                              "disponível no filing permanecem sem ajuste."
+                              "disponível no filing permanecem sem ajuste — avaliar se devem "
+                              "permanecer no conjunto ou ser excluídos (art. 32, IV da IN; "
+                              "OCDE TPG 3.51)."
                               ).format(_cr_meta["n_foreign_skipped"])
+                _just = (_cr_meta.get("justification") or "").strip()
+                if not _just:
+                    _just = ("A parte testada opera no mercado brasileiro (prêmio de "
+                             "risco-país de {}), enquanto os comparáveis ajustados operam em "
+                             "mercado com prêmio de {}. A diferença de {} nas circunstâncias "
+                             "econômicas é materialmente relevante para margens operacionais "
+                             "e não decorre de funções, ativos ou riscos das partes. O ajuste "
+                             "elimina especificamente essa diferença, conforme a metodologia "
+                             "do Anexo II, e por isso espera-se que aumente a confiabilidade "
+                             "da comparação (art. 32, I, V e §1º, da IN RFB 2.161/2023)."
+                             ).format(_crp_t, _crp_c, _diff)
+                just_lbl = "Justificativa do ajuste (art. 32): "
             else:
                 fnote = ("Note: country-risk comparability adjustment applied to {} foreign "
                          "comparable(s) (SEC EDGAR) per the guidance in Annex II of IN RFB "
                          "2.161/2023 (art. 23, §4º): country-risk premium differential "
                          "({} − {}) multiplied by capital employed and added to the "
-                         "comparable's operating income. Capital employed = net PP&E + "
-                         "current assets − current liabilities, from the same filing."
-                         ).format(_n_adj, _pct(_cr_meta.get("crp_tested", 0), lang),
-                                  _pct(_cr_meta.get("crp_comp", 0), lang))
+                         "comparable's operating income. Operational definition adopted: "
+                         "capital employed = net PP&E + current assets − current liabilities, "
+                         "from the same filing — the rule does not define 'operating fixed "
+                         "assets'; operating intangibles and right-of-use assets were not "
+                         "included."
+                         ).format(_n_adj, _crp_t, _crp_c)
                 if _src:
-                    fnote += " Premium source: {}.".format(_src)
+                    fnote += " Premium source: {} (RFB does not prescribe a source).".format(_src)
                 if _cr_meta.get("n_foreign_skipped"):
                     fnote += (" {} SEC comparable(s) without positive capital employed "
-                              "available in the filing remain unadjusted."
+                              "available in the filing remain unadjusted — assess whether "
+                              "they should remain in the set or be excluded (art. 32, IV; "
+                              "OECD TPG 3.51)."
                               ).format(_cr_meta["n_foreign_skipped"])
+                _just = (_cr_meta.get("justification") or "").strip()
+                if not _just:
+                    _just = ("The tested party operates in the Brazilian market "
+                             "(country-risk premium of {}), while the adjusted comparables "
+                             "operate in a market with a premium of {}. The {} difference in "
+                             "economic circumstances is materially relevant to operating "
+                             "margins and does not derive from the parties' functions, assets "
+                             "or risks. The adjustment specifically eliminates this "
+                             "difference, per the Annex II methodology, and is therefore "
+                             "expected to increase the reliability of the comparison "
+                             "(art. 32, I, V and §1º, IN RFB 2.161/2023)."
+                             ).format(_crp_t, _crp_c, _diff)
+                just_lbl = "Adjustment rationale (art. 32): "
             story.append(Paragraph(_esc_xml(fnote), S["small"]))
+            story.append(Spacer(1, 0.1*cm))
+            story.append(Paragraph(
+                "<b>" + _esc_xml(just_lbl) + "</b>" + _esc_xml(_just), S["small"]))
         elif _has_foreign:
             story.append(Spacer(1, 0.15*cm))
             fnote = ("Nota: o conjunto inclui comparáveis estrangeiros (SEC EDGAR — empresas "

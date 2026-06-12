@@ -220,7 +220,8 @@ def test_pdf_with_country_risk_adjustment():
         "iqr_result": iqr,
         "country_risk": {"applied": True, "crp_tested": 3.24, "crp_comp": 0.23,
                          "source": "Damodaran — NYU Stern (jan/2026)",
-                         "n_adjusted": 1, "n_foreign_skipped": 1},
+                         "n_adjusted": 1, "n_foreign_skipped": 1,
+                         "justification": ""},  # empty → PDF auto-generates rationale
         "comparables": [
             {"name": "US Adjusted Co", "value": round(cr["adjusted_margin"], 4),
              "source": "SEC EDGAR 2024 (10-K)",
@@ -236,3 +237,16 @@ def test_pdf_with_country_risk_adjustment():
     # The audit-trail line itself: official-style math, localized
     txt = _cr_adjustment_text({**cr, "currency": "USD"}, "pt")
     assert "Anexo II" in txt and "3,24%" in txt and "0,23%" in txt and "capital empregado" in txt
+    # User-provided rationale must also render (art. 32 justification path)
+    pdf2 = generate_report({
+        "language": "pt", "company_name": "Teste", "tested_party_name": "Teste",
+        "method": "MLT", "pli": "Margem Operacional", "fiscal_year": "2024",
+        "iqr_result": iqr,
+        "country_risk": {"applied": True, "crp_tested": 3.24, "crp_comp": 0.23,
+                         "source": "X", "n_adjusted": 1, "n_foreign_skipped": 0,
+                         "justification": "Justificativa própria <com& xml>"},
+        "comparables": [
+            {"name": "US Co", "value": 21.0, "source": "SEC EDGAR 2024 (10-K)",
+             "cr_adjustment": {**cr, "currency": "USD"}}],
+    })
+    assert pdf2[:4] == b"%PDF"
