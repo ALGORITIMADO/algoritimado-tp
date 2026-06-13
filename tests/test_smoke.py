@@ -278,3 +278,25 @@ def test_pdf_local_file_items():
     none_adj = generate_report({**base, "lf_group": "X",
                                 "lf_adj_type": "Nenhum ajuste realizado"})
     assert none_adj[:4] == b"%PDF"
+
+
+# ── Master File (Arquivo Global, art. 58) ────────────────────────────────────
+def test_master_file_pdf():
+    # Empty Global File still renders (shows the 6 art. 58 placeholders)
+    empty = generate_report({"doc_type": "master_file", "language": "pt",
+                             "mf_group": "ABC Group"})
+    assert empty[:4] == b"%PDF" and len(empty) > 2000
+    # Filled Global File renders; XML-unsafe text and newlines are handled
+    # (the '&' and '<...>' must not break ReportLab markup).
+    filled = generate_report({"doc_type": "master_file", "language": "pt",
+        "mf_group": "ABC Group", "analysis_date": "13/06/2026",
+        "mf_org": "Holding na Alemanha & subsidiárias <BR/AR>\nLinha 2",
+        "mf_activities": "Distribuição farma; cadeia dos 5 maiores produtos",
+        "mf_intangibles": "Marca e patentes detidas pela holding",
+        "mf_financial": "Financiamento centralizado na tesouraria europeia",
+        "mf_apa": "Nenhum APA vigente", "mf_financials": "DFs consolidadas 2025"})
+    assert filled[:4] == b"%PDF" and len(filled) > 2000
+    # English variant
+    en = generate_report({"doc_type": "master_file", "language": "en",
+                          "mf_group": "ABC Group", "mf_org": "Holding in Germany"})
+    assert en[:4] == b"%PDF"

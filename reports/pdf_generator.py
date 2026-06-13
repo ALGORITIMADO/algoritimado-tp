@@ -229,6 +229,93 @@ def generate_report(analysis_data: dict) -> bytes:
     story.append(Spacer(1, 0.3*cm))
     story.append(HRFlowable(width="100%", thickness=3, color=ALG_GOLD, spaceAfter=8))
 
+    # ── MASTER FILE (Arquivo Global) — separate deliverable, art. 58 ─────────
+    # The Global File is a group-level qualitative document, required for every
+    # obligated taxpayer (>= R$15M; art. 57 §1º only waives it below R$15M). It
+    # is filed as its OWN attachment at e-CAC, so it gets its own PDF here.
+    if analysis_data.get("doc_type") == "master_file":
+        _mf_title = ("Arquivo Global (Master File)" if lang == "pt"
+                     else "Global File (Master File)")
+        story.append(Paragraph(_mf_title, S["title"]))
+        story.append(Spacer(1, 0.15*cm))
+        _grp = str(analysis_data.get("mf_group") or analysis_data.get("company_name") or "—").strip()
+        _date = analysis_data.get("analysis_date", "")
+        story.append(Paragraph(
+            ("<b>Grupo multinacional:</b> {}  ·  <b>Data:</b> {}  ·  "
+             "<b>Legislação:</b> art. 58 da IN RFB 2.161/2023"
+             if lang == "pt" else
+             "<b>Multinational group:</b> {}  ·  <b>Date:</b> {}  ·  "
+             "<b>Legislation:</b> art. 58 of IN RFB 2.161/2023").format(
+                _esc_xml(_grp), _esc_xml(str(_date))),
+            ParagraphStyle("mfh", fontName=FONT, fontSize=9.5,
+                           textColor=colors.HexColor("#555555"), spaceAfter=4)))
+        story.append(HRFlowable(width="100%", thickness=0.5,
+                                color=colors.HexColor("#DDDDDD"), spaceBefore=4, spaceAfter=10))
+        _mf_secs = [
+            ("mf_org", "I — Estrutura organizacional",
+             "I — Organizational structure",
+             "Organograma do grupo multinacional e localização geográfica das entidades.",
+             "Organization chart of the multinational group and geographic location of entities."),
+            ("mf_activities", "II — Atividades do grupo",
+             "II — Group activities",
+             "Atividades que mais geram lucro, análise funcional resumida, cadeia de suprimentos "
+             "dos 5 maiores produtos/serviços, principais contratos de serviços e reestruturações.",
+             "Profit-driving activities, brief functional analysis, supply chain of the 5 largest "
+             "products/services, main service contracts, and restructurings."),
+            ("mf_intangibles", "III — Intangíveis",
+             "III — Intangibles",
+             "Estratégia de desenvolvimento/propriedade/exploração, intangíveis relevantes e seus "
+             "titulares, contratos, políticas de TP e transferências intragrupo no exercício.",
+             "Development/ownership/exploitation strategy, relevant intangibles and owners, "
+             "contracts, TP policies, and intra-group transfers in the year."),
+            ("mf_financial", "IV — Operações financeiras",
+             "IV — Financial operations",
+             "Política de financiamento do grupo e entidades que centralizam as funções financeiras.",
+             "Group financing policy and entities centralizing financial functions."),
+            ("mf_apa", "V — Acordos prévios e rulings",
+             "V — Advance agreements and rulings",
+             "Lista e descrição de APAs unilaterais, rulings e demais acordos com administrações "
+             "tributárias que afetem a alocação de renda entre países.",
+             "List and description of unilateral APAs, rulings and other agreements with tax "
+             "administrations affecting income allocation between countries."),
+            ("mf_financials", "VI — Demonstrações financeiras consolidadas",
+             "VI — Consolidated financial statements",
+             "Demonstrações financeiras consolidadas mais recentes do grupo (anexar à parte).",
+             "Most recent consolidated financial statements of the group (attach separately)."),
+        ]
+        _any = False
+        for _k, _pt, _en, _hint_pt, _hint_en in _mf_secs:
+            _val = str(analysis_data.get(_k) or "").strip()
+            story.append(Paragraph(
+                ("{} (art. 58)".format(_pt) if lang == "pt" else "{} (art. 58)".format(_en)),
+                S["section"]))
+            if _val:
+                _any = True
+                story.append(Paragraph(_esc_xml(_val).replace("\n", "<br/>"), S["body"]))
+            else:
+                story.append(Paragraph(
+                    "<i>" + _esc_xml(_hint_pt if lang == "pt" else _hint_en)
+                    + (" — a preencher." if lang == "pt" else " — to be completed.") + "</i>",
+                    S["small"]))
+            story.append(Spacer(1, 0.25*cm))
+        story.append(HRFlowable(width="100%", thickness=0.5,
+                                color=colors.HexColor("#DDDDDD"), spaceBefore=6, spaceAfter=8))
+        _mf_note = ("Documento estruturado conforme o art. 58 da IN RFB 2.161/2023, anexado "
+                    "separadamente ao Arquivo Local no Processo Digital do e-CAC. Arquivo Global "
+                    "em idioma estrangeiro (exceto inglês/espanhol) deve vir com tradução simples "
+                    "para o português (art. 58, §1º). Esta ferramenta não substitui laudo assinado "
+                    "por profissional habilitado."
+                    if lang == "pt" else
+                    "Document structured per art. 58 of IN RFB 2.161/2023, attached separately to "
+                    "the Local File in the e-CAC Digital Process. A Global File in a foreign "
+                    "language (except English/Spanish) must include a simple Portuguese translation "
+                    "(art. 58, §1º). This tool does not replace a report signed by a qualified "
+                    "professional.")
+        story.append(Paragraph(_mf_note, S["disc"]))
+        NumberedCanvas.lang = lang
+        doc.build(story, canvasmaker=NumberedCanvas)
+        return buf.getvalue()
+
     # ── TITLE ─────────────────────────────────────────────────────────────────
     title_txt = ("Relatório de Análise de Preços de Transferência"
                  if lang == "pt" else "Transfer Pricing Analysis Report")

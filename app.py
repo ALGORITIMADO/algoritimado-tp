@@ -1315,5 +1315,89 @@ if "iqr_result" in st.session_state:
     except Exception as e:
         st.warning(f"PDF: {e}")
 
+# ── ARQUIVO GLOBAL (MASTER FILE) — 2º deliverable obrigatório (art. 58) ───────
+# Group-level qualitative document, required for every obligated taxpayer
+# (>= R$15M; art. 57 §1º only waives it below R$15M), filed as its OWN
+# attachment at e-CAC. Independent of the benchmark calc above.
+st.divider()
+mf_title = ("📑 Arquivo Global (Master File) — 2º documento obrigatório (art. 58)" if is_pt
+            else "📑 Global File (Master File) — 2nd mandatory document (art. 58)")
+with st.expander(mf_title, expanded=False):
+    st.markdown(
+        ("Na faixa **R$ 15 mi–500 mi** o contribuinte entrega **dois** documentos: o "
+         "Arquivo Local (acima) **e** o Arquivo Global (Master File). O Arquivo Global "
+         "descreve o **grupo multinacional** como um todo (art. 58 da IN RFB 2.161/2023) e "
+         "é anexado separadamente no e-CAC. Preencha os 6 itens abaixo para gerar o PDF; é "
+         "o mesmo documento para todas as transações do grupo."
+         if is_pt else
+         "In the **R$15M–500M** band the taxpayer files **two** documents: the Local File "
+         "(above) **and** the Global File (Master File). The Global File describes the "
+         "**multinational group** as a whole (art. 58 of IN RFB 2.161/2023) and is attached "
+         "separately at e-CAC. Fill the 6 items below to generate the PDF; it is the same "
+         "document for all the group's transactions.")
+    )
+    mf_group = st.text_input(
+        "Denominação do grupo multinacional" if is_pt else "Multinational group name",
+        value=(st.session_state.get("meta", {}) or {}).get("lf_group", ""),
+        placeholder="Ex: ABC Group", key="mf_group_in")
+    _MF_FIELDS = [
+        ("mf_org",
+         ("I — Estrutura organizacional" if is_pt else "I — Organizational structure"),
+         ("Organograma do grupo e localização geográfica das entidades."
+          if is_pt else "Group org chart and geographic location of entities.")),
+        ("mf_activities",
+         ("II — Atividades do grupo" if is_pt else "II — Group activities"),
+         ("Atividades que mais geram lucro; análise funcional resumida; cadeia dos 5 maiores "
+          "produtos/serviços; principais contratos de serviços; reestruturações."
+          if is_pt else "Profit-driving activities; brief FAR; supply chain of 5 largest "
+          "products/services; main service contracts; restructurings.")),
+        ("mf_intangibles",
+         ("III — Intangíveis" if is_pt else "III — Intangibles"),
+         ("Estratégia de desenvolvimento/propriedade; intangíveis relevantes e titulares; "
+          "contratos; políticas de TP; transferências intragrupo no exercício."
+          if is_pt else "Development/ownership strategy; relevant intangibles and owners; "
+          "contracts; TP policies; intra-group transfers in the year.")),
+        ("mf_financial",
+         ("IV — Operações financeiras" if is_pt else "IV — Financial operations"),
+         ("Política de financiamento do grupo; entidades que centralizam as funções financeiras."
+          if is_pt else "Group financing policy; entities centralizing financial functions.")),
+        ("mf_apa",
+         ("V — Acordos prévios e rulings" if is_pt else "V — Advance agreements and rulings"),
+         ("APAs unilaterais, rulings e acordos com administrações tributárias que afetem a "
+          "alocação de renda entre países."
+          if is_pt else "Unilateral APAs, rulings and agreements with tax administrations "
+          "affecting income allocation between countries.")),
+        ("mf_financials",
+         ("VI — Demonstrações financeiras consolidadas" if is_pt
+          else "VI — Consolidated financial statements"),
+         ("Referência às demonstrações consolidadas mais recentes (anexar à parte)."
+          if is_pt else "Reference to the most recent consolidated statements (attach separately).")),
+    ]
+    mf_values = {}
+    for _k, _label, _hint in _MF_FIELDS:
+        mf_values[_k] = st.text_area(_label, placeholder=_hint, key=f"{_k}_in", height=70)
+
+    mf_filled = sum(1 for v in mf_values.values() if (v or "").strip())
+    if mf_filled == 0:
+        st.caption("Preencha pelo menos um item para gerar um Arquivo Global útil." if is_pt
+                   else "Fill at least one item to generate a useful Global File.")
+    try:
+        mf_data = {
+            "doc_type": "master_file",
+            "language": "pt" if is_pt else "en",
+            "analysis_date": datetime.now().strftime("%d/%m/%Y"),
+            "mf_group": mf_group or company_name or "—",
+            **mf_values,
+        }
+        mf_pdf = generate_report(mf_data)
+        mf_slug = (mf_group or company_name or "grupo").replace(" ", "-").lower()
+        st.download_button(
+            label=("📑 Baixar Arquivo Global (PDF)" if is_pt else "📑 Download Global File (PDF)"),
+            data=mf_pdf,
+            file_name=f"algoritimado-arquivo-global-{mf_slug}-{datetime.now().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf", width="stretch", key="mf_download")
+    except Exception as e:
+        st.warning(f"Master File PDF: {e}")
+
 st.divider()
 st.markdown('<div style="text-align:center;font-size:12px;color:#9CA3AF;padding:1rem 0"><strong style="color:#1B4332">ALGORITIMADO</strong> · Transfer Pricing Intelligence Platform · MVP v0.1<br>Lei 14.596/2023 · IN RFB 2.161/2023 · OECD Transfer Pricing Guidelines<br><a href="https://algoritimado.com" style="color:#2D6A4F">algoritimado.com</a> · Esta plataforma não substitui laudo assinado por profissional habilitado</div>', unsafe_allow_html=True)
