@@ -905,6 +905,103 @@ if "MLT" in method and pli_option == "operating_margin":
              "adjusted.")
         )
 
+# ── PIC COMMODITIES + RTC (Art. 37–38) ──────────────────────────────────────
+# Commodity CUP: arm's-length value = quotation on the pricing date ± adjustments
+# (Art. 37 §1/§3), from a recognized exchange/agency (Art. 36, II). The practiced
+# price is compared to that reference; divergence is the TP adjustment. The
+# transaction must be registered in the RTC (Art. 38; IN 2.246/2024), whose
+# receipt feeds the Local File (art. 38 §7). Manual quotation entry — automated
+# exchange fetch (CEPEA/B3) is a later slice.
+commodity_pic = None
+if "PIC" in method:
+    QSOURCES_PT = ["B3 (Brasil)", "CME / CBOT", "LME", "ICE",
+                   "CEPEA/ESALQ (agência de pesquisa)", "Outra bolsa/agência/órgão governamental"]
+    QSOURCES_EN = ["B3 (Brazil)", "CME / CBOT", "LME", "ICE",
+                   "CEPEA/ESALQ (research agency)", "Other exchange/agency/government body"]
+    pic_title = ("🌾 PIC Commodities — cotação na data + RTC (art. 37–38) — opcional" if is_pt
+                 else "🌾 PIC Commodities — quotation on date + RTC (art. 37–38) — optional")
+    with st.expander(pic_title, expanded=False):
+        st.caption(
+            ("Para commodities, o valor arm's length é a **cotação na data de precificação** "
+             "(art. 37, §3), de bolsa/agência reconhecida (art. 36, II), **ajustada** por "
+             "diferenças materiais (frete, qualidade, prêmio — art. 37, §1). O preço praticado "
+             "é comparado a essa referência; a divergência é o ajuste de TP. A transação deve "
+             "ser registrada no RTC (art. 38; IN 2.246/2024) — informe o recibo."
+             if is_pt else
+             "For commodities, the arm's-length value is the **quotation on the pricing date** "
+             "(art. 37, §3) from a recognized exchange/agency (art. 36, II), **adjusted** for "
+             "material differences (freight, quality, premium — art. 37, §1). The practiced "
+             "price is compared to that reference; divergence is the TP adjustment. The "
+             "transaction must be registered in the RTC (art. 38) — provide the receipt nº.")
+        )
+        pcc1, pcc2, pcc3 = st.columns(3)
+        with pcc1:
+            pic_commodity = st.text_input(
+                "Commodity" if is_pt else "Commodity",
+                placeholder="Ex: Soja em grão" if is_pt else "E.g.: Soybean", key="pic_commodity")
+            pic_direction = st.selectbox(
+                "Operação" if is_pt else "Operation",
+                (["Importação", "Exportação"] if is_pt else ["Import", "Export"]), key="pic_dir")
+        with pcc2:
+            pic_source = st.selectbox(
+                "Fonte da cotação (art. 36, II)" if is_pt else "Quotation source (art. 36, II)",
+                (QSOURCES_PT if is_pt else QSOURCES_EN), key="pic_source")
+            pic_date = st.text_input(
+                "Data de precificação (art. 37, §3)" if is_pt else "Pricing date (art. 37, §3)",
+                placeholder="DD/MM/AAAA", key="pic_date")
+        with pcc3:
+            pic_ccy = st.selectbox("Moeda" if is_pt else "Currency",
+                                   ["USD", "BRL", "EUR"], key="pic_ccy")
+            pic_rtc = st.text_input(
+                "Nº do recibo RTC (art. 38)" if is_pt else "RTC receipt nº (art. 38)",
+                placeholder="Ex: RTC-2025-000123", key="pic_rtc")
+        pq1, pq2, pq3 = st.columns(3)
+        with pq1:
+            pic_quote = st.number_input(
+                "Cotação na data" if is_pt else "Quotation on date",
+                value=0.0, step=0.01, format="%.4f", key="pic_quote")
+        with pq2:
+            pic_adj = st.number_input(
+                "Ajustes líquidos (± frete/qualidade/prêmio)" if is_pt
+                else "Net adjustments (± freight/quality/premium)",
+                value=0.0, step=0.01, format="%.4f", key="pic_adj")
+        with pq3:
+            pic_practiced = st.number_input(
+                "Preço praticado na transação" if is_pt else "Practiced transaction price",
+                value=0.0, step=0.01, format="%.4f", key="pic_practiced")
+        pic_adj_desc = st.text_input(
+            "Descrição dos ajustes (art. 37, §1)" if is_pt else "Adjustments description (art. 37, §1)",
+            placeholder=("Ex: + frete CIF até o porto; − desconto de qualidade 2%"
+                         if is_pt else "E.g.: + CIF freight to port; − 2% quality discount"),
+            key="pic_adj_desc")
+        if pic_quote > 0 and pic_practiced != 0:
+            from calculations.commodities import calculate_pic_commodity
+            commodity_pic = calculate_pic_commodity(
+                pic_practiced, pic_quote, pic_adj,
+                direction=("import" if pic_direction in ("Importação", "Import") else "export"),
+                currency=pic_ccy)
+            commodity_pic.update({"commodity": pic_commodity, "source": pic_source,
+                                  "pricing_date": pic_date, "rtc_receipt": pic_rtc,
+                                  "adj_desc": pic_adj_desc})
+            _ref = commodity_pic["reference"]
+            _diff = commodity_pic["difference"]
+            if commodity_pic["is_arms_length"]:
+                st.success(
+                    (f"✅ Em conformidade: preço praticado = cotação ajustada ({pic_ccy} {_ref:.4f})."
+                     if is_pt else
+                     f"✅ Compliant: practiced price = adjusted quotation ({pic_ccy} {_ref:.4f}).")
+                )
+            else:
+                st.warning(
+                    (f"⚠️ Divergência de {pic_ccy} {_diff:.4f} ({commodity_pic['pct_diff']:.2f}%) "
+                     f"em relação à cotação ajustada ({pic_ccy} {_ref:.4f}). "
+                     f"Ajuste de TP indicado: {pic_ccy} {commodity_pic['suggested_adjustment']:.4f}."
+                     if is_pt else
+                     f"⚠️ Divergence of {pic_ccy} {_diff:.4f} ({commodity_pic['pct_diff']:.2f}%) "
+                     f"from the adjusted quotation ({pic_ccy} {_ref:.4f}). "
+                     f"Indicated TP adjustment: {pic_ccy} {commodity_pic['suggested_adjustment']:.4f}.")
+                )
+
 # ── TESTED PARTY ──────────────────────────────────────────────────────────────
 st.divider()
 include_tested = st.checkbox(L["include_tested"], value=True)
@@ -1105,7 +1202,8 @@ if st.button(L["calc_btn"], width="stretch"):
                 lf_tx_value=(tx_value or "").strip(),
                 lf_adj_type=(adj_type or "").strip(),
                 lf_adj_value=(adj_value or "").strip(),
-                lf_adj_note=(adj_note or "").strip())
+                lf_adj_note=(adj_note or "").strip(),
+                commodity_pic=commodity_pic)
             _event_payload = {
                 "method": method.split("—")[0].strip(),
                 "pli": pli_option,

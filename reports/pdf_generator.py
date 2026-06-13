@@ -717,6 +717,67 @@ def generate_report(analysis_data: dict) -> bytes:
             story.append(Paragraph(fnote, S["small"]))
         story.append(Spacer(1, 0.5*cm))
 
+    # ── PIC COMMODITIES + RTC (art. 37–38) ──────────────────────────────────
+    _cp = analysis_data.get("commodity_pic")
+    if isinstance(_cp, dict):
+        story.append(Paragraph(
+            ("Método PIC — Commodities (art. 37)" if lang == "pt"
+             else "PIC Method — Commodities (art. 37)"), S["section"]))
+        _ccy = _cp.get("currency", "USD")
+        _fnum = lambda v: "{:,.4f}".format(v).replace(",", "X").replace(".", ",").replace("X", ".") \
+            if lang == "pt" else "{:,.4f}".format(v)
+        _commodity = str(_cp.get("commodity") or "—")
+        _dir_lbl = (("Importação" if lang == "pt" else "Import") if _cp.get("direction") == "import"
+                    else ("Exportação" if lang == "pt" else "Export"))
+        _intro = (("<b>Commodity:</b> {}  ·  <b>Operação:</b> {}  ·  <b>Fonte da cotação:</b> {}  ·  "
+                   "<b>Data de precificação:</b> {}" if lang == "pt" else
+                   "<b>Commodity:</b> {}  ·  <b>Operation:</b> {}  ·  <b>Quotation source:</b> {}  ·  "
+                   "<b>Pricing date:</b> {}").format(
+            _esc_xml(_commodity), _dir_lbl, _esc_xml(str(_cp.get("source") or "—")),
+            _esc_xml(str(_cp.get("pricing_date") or "—"))))
+        story.append(Paragraph(_intro, S["body"]))
+        _adj_desc = str(_cp.get("adj_desc") or "").strip()
+        if lang == "pt":
+            _calc = ("Cotação na data {c} {q} {adj} = referência arm's length {c} {r}. "
+                     "Preço praticado {c} {p}. {verdict}").format(
+                c=_ccy, q=_fnum(_cp.get("quotation_price", 0)),
+                adj=("+ ajustes " + _ccy + " " + _fnum(_cp.get("adjustments_total", 0))
+                     if _cp.get("adjustments_total", 0) >= 0
+                     else "− ajustes " + _ccy + " " + _fnum(abs(_cp.get("adjustments_total", 0)))),
+                r=_fnum(_cp.get("reference", 0)), p=_fnum(_cp.get("practiced_price", 0)),
+                verdict=("Em conformidade — preço praticado igual à cotação ajustada."
+                         if _cp.get("is_arms_length") else
+                         "Divergência de {c} {d} ({pct:.2f}%); ajuste de TP indicado: {c} {s}.".format(
+                             c=_ccy, d=_fnum(_cp.get("difference", 0)), pct=_cp.get("pct_diff", 0),
+                             s=_fnum(_cp.get("suggested_adjustment", 0)))))
+        else:
+            _calc = ("Quotation on date {c} {q} {adj} = arm's-length reference {c} {r}. "
+                     "Practiced price {c} {p}. {verdict}").format(
+                c=_ccy, q=_fnum(_cp.get("quotation_price", 0)),
+                adj=("+ adjustments " + _ccy + " " + _fnum(_cp.get("adjustments_total", 0))
+                     if _cp.get("adjustments_total", 0) >= 0
+                     else "− adjustments " + _ccy + " " + _fnum(abs(_cp.get("adjustments_total", 0)))),
+                r=_fnum(_cp.get("reference", 0)), p=_fnum(_cp.get("practiced_price", 0)),
+                verdict=("Compliant — practiced price equals the adjusted quotation."
+                         if _cp.get("is_arms_length") else
+                         "Divergence of {c} {d} ({pct:.2f}%); indicated TP adjustment: {c} {s}.".format(
+                             c=_ccy, d=_fnum(_cp.get("difference", 0)), pct=_cp.get("pct_diff", 0),
+                             s=_fnum(_cp.get("suggested_adjustment", 0)))))
+        story.append(Paragraph(_calc, S["body"]))
+        if _adj_desc:
+            story.append(Paragraph(
+                ("<b>Ajustes (art. 37, §1):</b> " if lang == "pt"
+                 else "<b>Adjustments (art. 37, §1):</b> ") + _esc_xml(_adj_desc), S["small"]))
+        _rtc = str(_cp.get("rtc_receipt") or "").strip()
+        story.append(Paragraph(
+            (("Registro no RTC (art. 38; IN 2.246/2024): " + (_rtc if _rtc else "a informar")
+              + ". Os contratos de suporte devem ser anexados ao Arquivo Local (art. 38, §7º).")
+             if lang == "pt" else
+             ("RTC registration (art. 38; IN 2.246/2024): " + (_rtc if _rtc else "to be provided")
+              + ". Supporting contracts must be attached to the Local File (art. 38, §7º).")),
+            S["small"]))
+        story.append(Spacer(1, 0.4*cm))
+
     # ── ITEM VI — AJUSTES DE FIM DE EXERCÍCIO (art. 61, VI) ──────────────────
     _adj_type = str(analysis_data.get("lf_adj_type") or "").strip()
     _adj_value = str(analysis_data.get("lf_adj_value") or "").strip()

@@ -8,6 +8,7 @@ import pandas as pd
 
 from calculations.base import calculate_iqr
 from calculations.country_risk import adjust_comparable_margin
+from calculations.commodities import calculate_pic_commodity
 from data.edgar_fetcher import extract_financials, _pli_breakdown
 from data.cvm_fetcher import calculate_margins_cvm, _pli_breakdown_cvm
 from reports.pdf_generator import generate_report, _breakdown_text, _cr_adjustment_text
@@ -300,3 +301,34 @@ def test_master_file_pdf():
     en = generate_report({"doc_type": "master_file", "language": "en",
                           "mf_group": "ABC Group", "mf_org": "Holding in Germany"})
     assert en[:4] == b"%PDF"
+
+
+# ── PIC commodities + RTC (art. 37-38) ───────────────────────────────────────
+def test_pic_commodity_math():
+    # Quotation 100 + adjustments 5 = reference 105; practiced 105 → compliant
+    r = calculate_pic_commodity(105.0, 100.0, 5.0, direction="export")
+    assert r["reference"] == 105.0 and r["is_arms_length"] is True
+    assert abs(r["suggested_adjustment"]) < 1e-9
+    # Practiced 98 vs reference 105 → divergence, adjustment +7 to reach arm's length
+    r2 = calculate_pic_commodity(98.0, 100.0, 5.0, direction="import")
+    assert r2["is_arms_length"] is False
+    assert abs(r2["difference"] - (-7.0)) < 1e-9
+    assert abs(r2["suggested_adjustment"] - 7.0) < 1e-9
+    # Negative adjustments subtract from the quotation
+    r3 = calculate_pic_commodity(95.0, 100.0, -5.0, direction="export")
+    assert r3["reference"] == 95.0 and r3["is_arms_length"] is True
+
+
+def test_pdf_with_commodity_pic():
+    iqr = calculate_iqr([100.0, 102.0, 98.0], tested_party_value=101.0)
+    cp = calculate_pic_commodity(98.0, 100.0, 5.0, direction="import", currency="USD")
+    cp.update({"commodity": "Soja em grão", "source": "CME / CBOT",
+               "pricing_date": "15/03/2025", "rtc_receipt": "RTC-2025-000123",
+               "adj_desc": "+ frete CIF; − desconto de qualidade <2%> & ajuste"})
+    pdf = generate_report({
+        "language": "pt", "company_name": "Teste", "tested_party_name": "Teste",
+        "method": "PIC", "pli": "Preço (USD)", "fiscal_year": "2025",
+        "iqr_result": iqr, "commodity_pic": cp,
+        "comparables": [{"name": "Cot. CME", "value": 100.0, "source": "CME"}],
+    })
+    assert pdf[:4] == b"%PDF" and len(pdf) > 2000
