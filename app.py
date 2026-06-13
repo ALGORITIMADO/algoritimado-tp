@@ -349,13 +349,13 @@ with st.expander(far_title, expanded=False):
         key="far_risks", height=80)
     st.caption(
         ("Cobertura: estes campos atendem o conteúdo do Arquivo Local **simplificado** "
-         "(art. 61 — transações de R$ 15 mi a R$ 500 mi). Para o Arquivo Local **completo** "
-         "(≥ R$ 500 mi), a norma exige também a análise funcional das contrapartes e dos "
+         "(art. 61 — transações de R\\$ 15 mi a R\\$ 500 mi). Para o Arquivo Local **completo** "
+         "(≥ R\\$ 500 mi), a norma exige também a análise funcional das contrapartes e dos "
          "comparáveis (art. 59), não coberta por este relatório."
          if is_pt else
          "Coverage: these fields meet the content of the **simplified** Local File "
-         "(art. 61 — transactions from R$15M to R$500M). The **complete** Local File "
-         "(≥ R$500M) also requires the functional analysis of the counterparties and of "
+         "(art. 61 — transactions from R\\$15M to R\\$500M). The **complete** Local File "
+         "(≥ R\\$500M) also requires the functional analysis of the counterparties and of "
          "the comparables (art. 59), not covered by this report.")
     )
 
