@@ -250,3 +250,31 @@ def test_pdf_with_country_risk_adjustment():
              "cr_adjustment": {**cr, "currency": "USD"}}],
     })
     assert pdf2[:4] == b"%PDF"
+
+
+# ── Fileable Local File items I/II/VI (art. 61) ──────────────────────────────
+def test_pdf_local_file_items():
+    iqr = calculate_iqr([20.0, 15.0, 10.0], tested_party_value=15.0)
+    base = {
+        "language": "pt", "company_name": "Teste", "tested_party_name": "Exemplo BR Ltda",
+        "transaction_description": "Importação de mercadorias da matriz",
+        "method": "MLT", "pli": "Margem Operacional", "fiscal_year": "2024",
+        "iqr_result": iqr,
+        "comparables": [{"name": "A", "value": 20.0, "source": "Annual Report"}],
+    }
+    # Without the LF items the report still generates (graceful)
+    plain = generate_report(base)
+    # With items I (parties), II (transaction), VI (adjustment) the report is heavier
+    full = generate_report({**base,
+        "lf_group": "ABC Group", "lf_tp_cnpj": "00.000.000/0001-00",
+        "lf_rp_name": "ABC Holding GmbH & Co", "lf_rp_country": "Alemanha",
+        "lf_rp_taxid": "DE123456789",
+        "lf_tx_type": "Importação de bens", "lf_tx_value": "R$ 3.200.000,00",
+        "lf_adj_type": "Ajuste compensatório", "lf_adj_value": "R$ 180.000,00",
+        "lf_adj_note": "Ajuste à base do IRPJ <no> encerramento & fechamento"})
+    assert plain[:4] == b"%PDF" and full[:4] == b"%PDF"
+    assert len(full) > len(plain) + 300
+    # "No adjustment" declaration also renders (art. 61, VI is a required statement)
+    none_adj = generate_report({**base, "lf_group": "X",
+                                "lf_adj_type": "Nenhum ajuste realizado"})
+    assert none_adj[:4] == b"%PDF"

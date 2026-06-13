@@ -294,6 +294,99 @@ with st.expander(f"📋 {'Dados da Transação' if is_pt else 'Transaction Data'
     with c3: tested_party_name = st.text_input(L["tested_party"], placeholder="Ex: ABC Brasil Ltda")
     with c4: fiscal_year = st.text_input(L["fiscal_year"], placeholder="2024", value="2024")
 
+# ── ITEM I — IDENTIFICAÇÃO DAS PARTES RELACIONADAS (art. 61, I) ───────────────
+# Required content of the simplified Local File that the benchmark study alone
+# doesn't carry: group denomination, country of residence, tax registration nº
+# of the entities in the controlled transaction. Feeds the PDF so the output is
+# the fileable Arquivo Local, not just a benchmark.
+TX_TYPE_OPTIONS_PT = ["Importação de bens", "Exportação de bens",
+                      "Importação de bens — commodities", "Exportação de bens — commodities",
+                      "Serviços", "Direitos / royalties", "Intangíveis",
+                      "Operações financeiras", "Reestruturação de negócios",
+                      "Compartilhamento de custos", "Outros"]
+TX_TYPE_OPTIONS_EN = ["Import of goods", "Export of goods",
+                      "Import of goods — commodities", "Export of goods — commodities",
+                      "Services", "Rights / royalties", "Intangibles",
+                      "Financial transactions", "Business restructuring",
+                      "Cost sharing", "Other"]
+parties_title = ("🏢 Identificação das Partes e da Transação (art. 61, I e II) — opcional"
+                 if is_pt else
+                 "🏢 Identification of Parties and Transaction (art. 61, I and II) — optional")
+with st.expander(parties_title, expanded=False):
+    st.caption(
+        ("O art. 61, I exige identificar as entidades da transação controlada "
+         "(denominação, país de residência, nº de registro fiscal) e o art. 61, II "
+         "exige o tipo, as características e o valor da transação. Preencher torna o "
+         "PDF um Arquivo Local simplificado completo, e não apenas o estudo de benchmark."
+         if is_pt else
+         "Art. 61, I requires identifying the entities of the controlled transaction "
+         "(name, country of residence, tax registration nº) and art. 61, II requires "
+         "the type, characteristics and value of the transaction. Filling this makes the "
+         "PDF a complete simplified Local File, not just the benchmark study.")
+    )
+    pg1, pg2 = st.columns(2)
+    with pg1:
+        group_name = st.text_input(
+            "Denominação do grupo econômico" if is_pt else "Economic group name",
+            placeholder="Ex: ABC Group", key="lf_group")
+        tp_cnpj = st.text_input(
+            "CNPJ da parte testada (Brasil)" if is_pt else "Tested party tax ID (Brazil)",
+            placeholder="00.000.000/0001-00", key="lf_tp_cnpj")
+    with pg2:
+        rp_name = st.text_input(
+            "Parte relacionada no exterior — denominação" if is_pt
+            else "Foreign related party — name",
+            placeholder="Ex: ABC Holding GmbH", key="lf_rp_name")
+        rp_country = st.text_input(
+            "País de residência da parte relacionada" if is_pt
+            else "Related party country of residence",
+            placeholder="Ex: Alemanha" if is_pt else "E.g.: Germany", key="lf_rp_country")
+    rp_taxid = st.text_input(
+        "Nº de registro fiscal da parte relacionada no exterior" if is_pt
+        else "Foreign related party tax registration nº",
+        placeholder="Ex: DE123456789", key="lf_rp_taxid")
+    tc1, tc2 = st.columns([2, 1])
+    with tc1:
+        tx_type = st.selectbox(
+            "Tipo da transação controlada (art. 61, II)" if is_pt
+            else "Type of controlled transaction (art. 61, II)",
+            (TX_TYPE_OPTIONS_PT if is_pt else TX_TYPE_OPTIONS_EN), key="lf_tx_type")
+    with tc2:
+        tx_value = st.text_input(
+            "Valor da transação no exercício" if is_pt else "Transaction value in the year",
+            placeholder="Ex: R$ 3.200.000,00", key="lf_tx_value")
+
+# ── ITEM VI — AJUSTES DE FIM DE EXERCÍCIO (art. 61, VI) ──────────────────────
+ADJ_OPTIONS_PT = ["Nenhum ajuste realizado", "Ajuste espontâneo", "Ajuste compensatório"]
+ADJ_OPTIONS_EN = ["No adjustment made", "Spontaneous adjustment", "Compensating adjustment"]
+adj_title = ("📐 Ajuste de fim de exercício (art. 61, VI) — opcional" if is_pt
+             else "📐 Year-end adjustment (art. 61, VI) — optional")
+with st.expander(adj_title, expanded=False):
+    st.caption(
+        ("O art. 61, VI exige informar os ajustes espontâneos ou compensatórios feitos "
+         "no encerramento do exercício (Lei 14.596/2023, art. 17–18). Declare o que foi "
+         "efetivamente realizado — diferente do ajuste sugerido pelo intervalo, que é "
+         "apenas indicativo."
+         if is_pt else
+         "Art. 61, VI requires reporting the spontaneous or compensating adjustments made "
+         "at year-end (Law 14.596/2023, arts. 17–18). State what was actually carried out "
+         "— distinct from the adjustment suggested by the range, which is only indicative.")
+    )
+    ac1, ac2 = st.columns([1, 1])
+    with ac1:
+        adj_type = st.selectbox(
+            "Tipo de ajuste realizado" if is_pt else "Type of adjustment made",
+            (ADJ_OPTIONS_PT if is_pt else ADJ_OPTIONS_EN), key="lf_adj_type")
+    with ac2:
+        adj_value = st.text_input(
+            "Valor do ajuste (se houver)" if is_pt else "Adjustment value (if any)",
+            placeholder="Ex: R$ 180.000,00", key="lf_adj_value")
+    adj_note = st.text_input(
+        "Observação (opcional)" if is_pt else "Note (optional)",
+        placeholder=("Ex: ajuste compensatório à base do IRPJ/CSLL no encerramento"
+                     if is_pt else "E.g.: compensating adjustment to IRPJ/CSLL base at year-end"),
+        key="lf_adj_note")
+
 # ── FAR — FUNCTIONAL ANALYSIS (optional, feeds the PDF Local File section) ────
 far_title = "🧭 Análise Funcional — FAR (opcional)" if is_pt else "🧭 Functional Analysis — FAR (optional)"
 with st.expander(far_title, expanded=False):
@@ -1002,7 +1095,17 @@ if st.button(L["calc_btn"], width="stretch"):
                 far_functions=(far_functions or "").strip(),
                 far_assets=(far_assets or "").strip(),
                 far_risks=(far_risks or "").strip(),
-                country_risk=cr_meta)
+                country_risk=cr_meta,
+                lf_group=(group_name or "").strip(),
+                lf_tp_cnpj=(tp_cnpj or "").strip(),
+                lf_rp_name=(rp_name or "").strip(),
+                lf_rp_country=(rp_country or "").strip(),
+                lf_rp_taxid=(rp_taxid or "").strip(),
+                lf_tx_type=(tx_type or "").strip(),
+                lf_tx_value=(tx_value or "").strip(),
+                lf_adj_type=(adj_type or "").strip(),
+                lf_adj_value=(adj_value or "").strip(),
+                lf_adj_note=(adj_note or "").strip())
             _event_payload = {
                 "method": method.split("—")[0].strip(),
                 "pli": pli_option,

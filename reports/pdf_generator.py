@@ -271,6 +271,60 @@ def generate_report(analysis_data: dict) -> bytes:
     story.append(meta_table)
     story.append(Spacer(1, 0.5*cm))
 
+    # ── ITEM I — IDENTIFICAÇÃO DAS PARTES RELACIONADAS (art. 61, I) ───────────
+    # Identification of the entities in the controlled transaction. Rendered only
+    # when supplied — turns the benchmark study into the fileable Local File.
+    _grp = str(analysis_data.get("lf_group") or "").strip()
+    _tp_cnpj = str(analysis_data.get("lf_tp_cnpj") or "").strip()
+    _rp_name = str(analysis_data.get("lf_rp_name") or "").strip()
+    _rp_country = str(analysis_data.get("lf_rp_country") or "").strip()
+    _rp_taxid = str(analysis_data.get("lf_rp_taxid") or "").strip()
+    if any([_grp, _tp_cnpj, _rp_name, _rp_country, _rp_taxid]):
+        story.append(Paragraph(
+            ("Identificação das Partes Relacionadas (art. 61, I)" if lang == "pt"
+             else "Identification of Related Parties (art. 61, I)"), S["section"]))
+        _tp_name = _v(analysis_data.get("tested_party_name"), "—")
+        _rows = [[
+            _mp(_l("Parte", "Party"), True), _mp(_l("Denominação", "Name"), True),
+            _mp(_l("País", "Country"), True), _mp(_l("Registro fiscal", "Tax registration"), True)]]
+        _rows.append([_mp(_l("Parte testada", "Tested party")), _mp(_tp_name),
+                      _mp("Brasil" if lang == "pt" else "Brazil"), _mp(_tp_cnpj or "—")])
+        _rows.append([_mp(_l("Parte relacionada", "Related party")), _mp(_rp_name or "—"),
+                      _mp(_rp_country or "—"), _mp(_rp_taxid or "—")])
+        if _grp:
+            _rows.append([_mp(_l("Grupo econômico", "Economic group")), _mp(_grp),
+                          _mp("—"), _mp("—")])
+        _pt_table = Table(_rows, colWidths=[4.0*cm, 5.5*cm, 3.5*cm, 4.0*cm])
+        _pt_table.setStyle(TableStyle([
+            ("FONTSIZE", (0,0), (-1,-1), 9),
+            ("BACKGROUND", (0,0), (-1,0), ALG_MID),
+            ("TEXTCOLOR", (0,0), (-1,0), WHITE),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [WHITE, GRAY_LIGHT]),
+            ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#DDDDDD")),
+            ("TOPPADDING", (0,0), (-1,-1), 5), ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+            ("LEFTPADDING", (0,0), (-1,-1), 6),
+        ]))
+        story.append(_pt_table)
+        story.append(Spacer(1, 0.4*cm))
+
+    # ── ITEM II — CARACTERIZAÇÃO DA TRANSAÇÃO CONTROLADA (art. 61, II) ────────
+    _tx_type = str(analysis_data.get("lf_tx_type") or "").strip()
+    _tx_value = str(analysis_data.get("lf_tx_value") or "").strip()
+    if _tx_type or _tx_value:
+        story.append(Paragraph(
+            ("Caracterização da Transação Controlada (art. 61, II)" if lang == "pt"
+             else "Characterization of the Controlled Transaction (art. 61, II)"), S["section"]))
+        _desc = _v(analysis_data.get("transaction_description"), "—")
+        _parts = []
+        if _tx_type:
+            _parts.append(("<b>" + _l("Tipo: ", "Type: ") + "</b>") + _esc_xml(_tx_type))
+        _parts.append(("<b>" + _l("Descrição: ", "Description: ") + "</b>") + _esc_xml(_desc))
+        if _tx_value:
+            _parts.append(("<b>" + _l("Valor no exercício: ", "Value in the year: ") + "</b>")
+                          + _esc_xml(_tx_value))
+        story.append(Paragraph("  ·  ".join(_parts), S["body"]))
+        story.append(Spacer(1, 0.4*cm))
+
     # ── FUNCTIONAL ANALYSIS (FAR) — only rendered when the user filled it ─────
     _far_map = [
         ("far_functions", "Funções desempenhadas", "Functions performed"),
@@ -576,6 +630,33 @@ def generate_report(analysis_data: dict) -> bytes:
             story.append(Paragraph(fnote, S["small"]))
         story.append(Spacer(1, 0.5*cm))
 
+    # ── ITEM VI — AJUSTES DE FIM DE EXERCÍCIO (art. 61, VI) ──────────────────
+    _adj_type = str(analysis_data.get("lf_adj_type") or "").strip()
+    _adj_value = str(analysis_data.get("lf_adj_value") or "").strip()
+    _adj_note = str(analysis_data.get("lf_adj_note") or "").strip()
+    _adj_is_none = _adj_type in ("Nenhum ajuste realizado", "No adjustment made")
+    if _adj_type and (not _adj_is_none or _adj_value or _adj_note):
+        story.append(Paragraph(
+            ("Ajustes de Fim de Exercício (art. 61, VI)" if lang == "pt"
+             else "Year-end Adjustments (art. 61, VI)"), S["section"]))
+        _atxt = ("<b>" + _l("Ajuste realizado: ", "Adjustment made: ") + "</b>") + _esc_xml(_adj_type)
+        if _adj_value:
+            _atxt += "  ·  <b>" + _l("Valor: ", "Value: ") + "</b>" + _esc_xml(_adj_value)
+        if _adj_note:
+            _atxt += "<br/>" + _esc_xml(_adj_note)
+        story.append(Paragraph(_atxt, S["body"]))
+        story.append(Spacer(1, 0.4*cm))
+    elif _adj_is_none:
+        story.append(Paragraph(
+            ("Ajustes de Fim de Exercício (art. 61, VI)" if lang == "pt"
+             else "Year-end Adjustments (art. 61, VI)"), S["section"]))
+        story.append(Paragraph(
+            ("Não foram realizados ajustes espontâneos ou compensatórios no encerramento "
+             "do exercício." if lang == "pt"
+             else "No spontaneous or compensating adjustments were made at year-end."),
+            S["body"]))
+        story.append(Spacer(1, 0.4*cm))
+
     # ── METHODOLOGY ───────────────────────────────────────────────────────────
     story.append(HRFlowable(width="100%", thickness=0.5,
                              color=colors.HexColor("#DDDDDD"), spaceBefore=8, spaceAfter=8))
@@ -611,6 +692,30 @@ def generate_report(analysis_data: dict) -> bytes:
                 "informational purposes only. It does not constitute legal advice or a "
                 "formal transfer pricing study.")
     story.append(Paragraph(note, S["body"]))
+
+    # Art. 61 coverage map — only for the current regime, and only when the user
+    # supplied the identification items (i.e. is using the report as a fileable
+    # Local File rather than a standalone benchmark study).
+    _has_lf = any(str(analysis_data.get(k) or "").strip() for k in
+                  ("lf_group", "lf_tp_cnpj", "lf_rp_name", "lf_rp_country",
+                   "lf_rp_taxid", "lf_tx_type", "lf_tx_value"))
+    if _has_lf and not is_legacy:
+        cov = (("Cobertura do Arquivo Local simplificado (art. 61 da IN RFB 2.161/2023): "
+                "I) identificação das partes; II) caracterização da transação; III) método; "
+                "IV) comparáveis e intervalos; V) justificativa do método e dos comparáveis "
+                "(análise funcional); VI) ajustes de fim de exercício. Este documento pode ser "
+                "anexado ao Processo Digital no e-CAC; contratos de suporte (art. 38, §7º) e "
+                "Arquivo Global (Master File) devem ser anexados separadamente quando exigidos."
+                if lang == "pt" else
+                "Simplified Local File coverage (art. 61, IN RFB 2.161/2023): "
+                "I) identification of parties; II) characterization of the transaction; "
+                "III) method; IV) comparables and ranges; V) justification of method and "
+                "comparables (functional analysis); VI) year-end adjustments. This document may "
+                "be attached to the e-CAC Digital Process; supporting contracts (art. 38, §7º) "
+                "and the Master File must be attached separately when required."))
+        story.append(Spacer(1, 0.2*cm))
+        story.append(Paragraph(cov, S["small"]))
+
     story.append(Spacer(1, 0.3*cm))
     story.append(Paragraph(disc, S["disc"]))
 
