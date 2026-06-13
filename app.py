@@ -955,6 +955,37 @@ if "PIC" in method:
             pic_rtc = st.text_input(
                 "Nº do recibo RTC (art. 38)" if is_pt else "RTC receipt nº (art. 38)",
                 placeholder="Ex: RTC-2025-000123", key="pic_rtc")
+        # Assisted CEPEA lookup: the CEPEA site is bot-blocked (Cloudflare) and its
+        # data carries a usage licence, so we do NOT scrape it — we link straight to
+        # the official indicator page for the chosen commodity. The user reads the
+        # quotation for the pricing date and types it in (kept honest + licence-safe).
+        if "CEPEA" in str(pic_source):
+            _CEPEA_INDICADORES = {
+                "Açúcar cristal": "acucar", "Algodão": "algodao", "Arroz": "arroz",
+                "Bezerro": "bezerro", "Boi gordo": "boi-gordo", "Café": "cafe",
+                "Citros / laranja": "citros", "Etanol": "etanol", "Feijão": "feijao",
+                "Frango": "frango", "Leite": "leite", "Mandioca": "mandioca",
+                "Milho": "milho", "Ovinos": "ovinos", "Ovos": "ovos", "Soja": "soja",
+                "Suíno": "suino", "Tilápia": "tilapia", "Trigo": "trigo",
+            }
+            ck1, ck2 = st.columns([1, 2])
+            with ck1:
+                _cep_ind = st.selectbox(
+                    "Indicador CEPEA" if is_pt else "CEPEA indicator",
+                    list(_CEPEA_INDICADORES.keys()),
+                    index=list(_CEPEA_INDICADORES.keys()).index("Soja"), key="pic_cepea_ind")
+            with ck2:
+                _slug = _CEPEA_INDICADORES[_cep_ind]
+                _url = f"https://www.cepea.org.br/br/indicador/{_slug}.aspx"
+                st.markdown(
+                    (f"🔗 Abra o **[indicador CEPEA de {_cep_ind}]({_url})** ↗, leia a cotação "
+                     f"na data de precificação e informe abaixo. *(A cotação não é importada "
+                     f"automaticamente — o CEPEA exige licença de uso de dados.)*"
+                     if is_pt else
+                     f"🔗 Open the **[CEPEA {_cep_ind} indicator]({_url})** ↗, read the quotation "
+                     f"on the pricing date and enter it below. *(The quotation is not imported "
+                     f"automatically — CEPEA requires a data-usage licence.)*"),
+                    unsafe_allow_html=True)
         pq1, pq2, pq3 = st.columns(3)
         with pq1:
             pic_quote = st.number_input(
