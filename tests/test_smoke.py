@@ -340,15 +340,29 @@ def test_pic_commodity_guards():
 
 
 def test_pdf_with_commodity_pic():
-    iqr = calculate_iqr([100.0, 102.0, 98.0], tested_party_value=101.0)
+    # New commodity-PIC flow (art. 37): single quotation ± adjustments, NO IQR
+    # and NO comparable set. The PDF must build from commodity_pic alone, with
+    # iqr_result=None and comparables=[].
     cp = calculate_pic_commodity(98.0, 100.0, 5.0, direction="import", currency="USD")
     cp.update({"commodity": "Soja em grão", "source": "CME / CBOT",
                "pricing_date": "15/03/2025", "rtc_receipt": "RTC-2025-000123",
                "adj_desc": "+ frete CIF; − desconto de qualidade <2%> & ajuste"})
     pdf = generate_report({
         "language": "pt", "company_name": "Teste", "tested_party_name": "Teste",
-        "method": "PIC", "pli": "Preço (USD)", "fiscal_year": "2025",
-        "iqr_result": iqr, "commodity_pic": cp,
-        "comparables": [{"name": "Cot. CME", "value": 100.0, "source": "CME"}],
+        "method": "PIC — Commodities", "pli": "Preço (USD)", "fiscal_year": "2025",
+        "iqr_result": None, "commodity_pic": cp,
+        "comparables": [],
     })
     assert pdf[:4] == b"%PDF" and len(pdf) > 2000
+
+    # English locale + an arm's-length (compliant) case must also build cleanly.
+    cp_ok = calculate_pic_commodity(105.0, 100.0, 5.0, direction="export", currency="USD")
+    cp_ok.update({"commodity": "Soybean", "source": "CME / CBOT",
+                  "pricing_date": "03/15/2025", "rtc_receipt": "RTC-2025-000999"})
+    pdf_ok = generate_report({
+        "language": "en", "company_name": "Test Co", "tested_party_name": "Test Co",
+        "method": "PIC — Commodities", "pli": "Price (USD)", "fiscal_year": "2025",
+        "iqr_result": None, "commodity_pic": cp_ok,
+        "comparables": [],
+    })
+    assert pdf_ok[:4] == b"%PDF" and len(pdf_ok) > 2000

@@ -207,6 +207,7 @@ SOURCES = ["SEC EDGAR","Brazil CVM / ITR","Annual Report","Bloomberg",
            "Refinitiv / Orbis","S&P Capital IQ","Other / Outro"]
 METHOD_OPTIONS = ["MLT (TNMM) — Margem Líquida da Transação",
                   "PIC (CUP) — Preço Independente Comparável",
+                  "PIC — Commodities (cotação na data · art. 37)",
                   "PRL (RPM) — Preço de Revenda menos Lucro",
                   "MCL (Cost Plus) — Custo mais Lucro",
                   "PCI — Importação Commodities (legado · Lei 9.430/96)",
@@ -228,11 +229,17 @@ with st.sidebar:
     st.divider()
     st.markdown(f"**{L['method_label']}**")
     method = st.selectbox("method_sel", METHOD_OPTIONS, label_visibility="collapsed")
+    # Commodity PIC is its OWN method (art. 37: single quotation on the pricing
+    # date ± adjustments, NO interquartile range). Distinguished from the generic
+    # PIC-CUP (no "Commodities") and from legacy PCI/PECEX (have "Commodities"
+    # but not "PIC"). Gating is strict on this flag so no other method regresses.
+    is_commodity = ("PIC" in method) and ("Commodities" in method)
     with st.expander("ℹ️ Quando usar cada método" if is_pt else "ℹ️ When to use each method"):
         if is_pt:
             st.markdown(
                 "- **MLT (TNMM)** — mais usado. Distribuidores, prestadores de serviços, manufatura contratada\n"
-                "- **PIC (CUP)** — preços de mercado observáveis; commodities com cotação pública\n"
+                "- **PIC (CUP)** — preços de mercado comparáveis observáveis (não-commodities)\n"
+                "- **PIC — Commodities** — commodities com cotação pública: a referência é a cotação na data de precificação ± ajustes (art. 37), sem intervalo interquartil\n"
                 "- **PRL (RPM)** — distribuidores e revendedores sem transformação significativa\n"
                 "- **MCL (Cost Plus)** — fabricantes sob contrato; serviços de baixo risco\n"
                 "- **PCI / PECEX** — legado Lei 9.430/96, só pra exercícios até 2023"
@@ -240,7 +247,8 @@ with st.sidebar:
         else:
             st.markdown(
                 "- **MLT (TNMM)** — most used. Distributors, service providers, contract manufacturers\n"
-                "- **PIC (CUP)** — observable market prices; commodities with public quotations\n"
+                "- **PIC (CUP)** — observable comparable market prices (non-commodities)\n"
+                "- **PIC — Commodities** — commodities with public quotations: the reference is the quotation on the pricing date ± adjustments (art. 37), no interquartile range\n"
                 "- **PRL (RPM)** — distributors and resellers without significant transformation\n"
                 "- **MCL (Cost Plus)** — contract manufacturers; low-risk service providers\n"
                 "- **PCI / PECEX** — legacy Law 9.430/96, fiscal years through 2023 only"
@@ -486,321 +494,326 @@ elif "MCL" in method:
             value=100.0, step=0.01, min_value=0.01, key="mcl_cost")
 
 # ── LEVEL 2: AUTO SEARCH ─────────────────────────────────────────────────────
-ai_label = "🤖 Buscar Comparáveis Automaticamente (SEC EDGAR + CVM)" if is_pt else "🤖 Find Comparables Automatically (SEC EDGAR + CVM)"
-with st.expander(ai_label, expanded=False):
-    # Compatibility gate: Auto Search only honest for method+PLI combos whose data EDGAR/CVM actually return.
-    # PIC/PCI/PECEX use transaction prices (different data type); Berry Ratio/ROCE need fields neither fetcher computes.
-    _PRICE_METHODS = ("PIC", "PCI", "PECEX")
-    _UNSUPPORTED_PLIS = ("berry_ratio", "roce")
-    _method_supports = not any(x in method for x in _PRICE_METHODS)
-    _pli_supports = True
-    if "MLT" in method:
-        _pli_supports = pli_option not in _UNSUPPORTED_PLIS
+# Commodity PIC (art. 37) tests a single quotation ± adjustments, not a set of
+# comparables, so neither Auto Search nor the comparables table apply to it.
+# Auto Search + manual comparables table apply only to set-based methods.
+# Commodity PIC (art. 37) uses a single quotation ± adjustments, no set.
+if not is_commodity:
+    ai_label = "🤖 Buscar Comparáveis Automaticamente (SEC EDGAR + CVM)" if is_pt else "🤖 Find Comparables Automatically (SEC EDGAR + CVM)"
+    with st.expander(ai_label, expanded=False):
+        # Compatibility gate: Auto Search only honest for method+PLI combos whose data EDGAR/CVM actually return.
+        # PIC/PCI/PECEX use transaction prices (different data type); Berry Ratio/ROCE need fields neither fetcher computes.
+        _PRICE_METHODS = ("PIC", "PCI", "PECEX")
+        _UNSUPPORTED_PLIS = ("berry_ratio", "roce")
+        _method_supports = not any(x in method for x in _PRICE_METHODS)
+        _pli_supports = True
+        if "MLT" in method:
+            _pli_supports = pli_option not in _UNSUPPORTED_PLIS
 
-    # Clear stale results when method/PLI changes — markup values shouldn't display under margin labels.
-    _search_key = f"{method}|{pli_option}|{pli_label_display}"
-    if st.session_state.get("auto_results_key") != _search_key:
-        st.session_state.pop("auto_results", None)
-        st.session_state.pop("auto_results_pli_label", None)
-        st.session_state["auto_results_key"] = _search_key
+        # Clear stale results when method/PLI changes — markup values shouldn't display under margin labels.
+        _search_key = f"{method}|{pli_option}|{pli_label_display}"
+        if st.session_state.get("auto_results_key") != _search_key:
+            st.session_state.pop("auto_results", None)
+            st.session_state.pop("auto_results_pli_label", None)
+            st.session_state["auto_results_key"] = _search_key
 
-    if not _method_supports:
-        st.warning(
-            "⚠️ **Auto Search não aplicável a este método.**\n\n"
-            "PIC, PCI e PECEX usam preços de transação observáveis ou cotações de commodity "
-            "(fontes externas como CME, B3). SEC EDGAR e CVM Brasil fornecem dados financeiros "
-            "corporativos (margens, lucro), não preços de transação. "
-            "**Adicione os preços/cotações manualmente** na tabela abaixo."
-            if is_pt else
-            "⚠️ **Auto Search not applicable for this method.**\n\n"
-            "PIC, PCI, and PECEX use observable transaction prices or commodity quotations "
-            "(external sources like CME, B3). SEC EDGAR and CVM Brasil provide corporate "
-            "financial data (margins, profit), not transaction prices. "
-            "**Add prices/quotations manually** in the table below."
-        )
-    elif not _pli_supports:
-        st.warning(
-            "⚠️ **Auto Search ainda não cobre Berry Ratio / ROCE.**\n\n"
-            "Esses PLIs requerem dados financeiros adicionais (SG&A, ativos operacionais) "
-            "que estão no roadmap (Fase 3 — NVIDIA Inception). "
-            "**Opções:** (a) Adicione comparáveis manualmente, ou (b) troque o PLI para "
-            "Operating Margin, EBITDA Margin ou Net Profit Margin (cobertos pelo Auto Search)."
-            if is_pt else
-            "⚠️ **Auto Search does not yet cover Berry Ratio / ROCE.**\n\n"
-            "These PLIs require additional financial data (SG&A, operating assets) on the "
-            "roadmap (Phase 3 — NVIDIA Inception). **Options:** (a) Add comparables manually, "
-            "or (b) switch PLI to Operating Margin, EBITDA Margin or Net Profit Margin "
-            "(covered by Auto Search)."
-        )
-    else:
-        st.markdown(
-            '<div class="info-box">🌐 ' +
-            ("Busca automática em bases públicas: <b>SEC EDGAR</b> (empresas abertas EUA) e <b>CVM Brasil</b> (empresas abertas BR). Selecione os comparáveis encontrados para preencher a tabela abaixo automaticamente."
-             if is_pt else
-             "Automatic search in public databases: <b>SEC EDGAR</b> (US listed companies) and <b>CVM Brasil</b> (BR listed companies). Select found comparables to auto-fill the table below.") +
-            '</div>', unsafe_allow_html=True
-        )
-
-        # EBITDA Margin: only SEC EDGAR computes it (CVM DRE doesn't break out D&A).
-        if "MLT" in method and pli_option == "ebitda_margin":
-            st.info(
-                "ℹ️ **EBITDA Margin:** disponível apenas no SEC EDGAR no momento. "
-                "CVM Brasil não separa Depreciação/Amortização nas contas padronizadas do DRE consolidado. "
-                "Se marcar apenas 'CVM Brasil' como fonte, a busca retornará vazia."
+        if not _method_supports:
+            st.warning(
+                "⚠️ **Auto Search não aplicável a este método.**\n\n"
+                "PIC, PCI e PECEX usam preços de transação observáveis ou cotações de commodity "
+                "(fontes externas como CME, B3). SEC EDGAR e CVM Brasil fornecem dados financeiros "
+                "corporativos (margens, lucro), não preços de transação. "
+                "**Adicione os preços/cotações manualmente** na tabela abaixo."
                 if is_pt else
-                "ℹ️ **EBITDA Margin:** currently only available from SEC EDGAR. "
-                "CVM Brasil does not break out D&A in standard consolidated income statement accounts. "
-                "If you select only 'CVM Brasil' as source, the search will return empty."
+                "⚠️ **Auto Search not applicable for this method.**\n\n"
+                "PIC, PCI, and PECEX use observable transaction prices or commodity quotations "
+                "(external sources like CME, B3). SEC EDGAR and CVM Brasil provide corporate "
+                "financial data (margins, profit), not transaction prices. "
+                "**Add prices/quotations manually** in the table below."
+            )
+        elif not _pli_supports:
+            st.warning(
+                "⚠️ **Auto Search ainda não cobre Berry Ratio / ROCE.**\n\n"
+                "Esses PLIs requerem dados financeiros adicionais (SG&A, ativos operacionais) "
+                "que estão no roadmap (Fase 3 — NVIDIA Inception). "
+                "**Opções:** (a) Adicione comparáveis manualmente, ou (b) troque o PLI para "
+                "Operating Margin, EBITDA Margin ou Net Profit Margin (cobertos pelo Auto Search)."
+                if is_pt else
+                "⚠️ **Auto Search does not yet cover Berry Ratio / ROCE.**\n\n"
+                "These PLIs require additional financial data (SG&A, operating assets) on the "
+                "roadmap (Phase 3 — NVIDIA Inception). **Options:** (a) Add comparables manually, "
+                "or (b) switch PLI to Operating Margin, EBITDA Margin or Net Profit Margin "
+                "(covered by Auto Search)."
+            )
+        else:
+            st.markdown(
+                '<div class="info-box">🌐 ' +
+                ("Busca automática em bases públicas: <b>SEC EDGAR</b> (empresas abertas EUA) e <b>CVM Brasil</b> (empresas abertas BR). Selecione os comparáveis encontrados para preencher a tabela abaixo automaticamente."
+                 if is_pt else
+                 "Automatic search in public databases: <b>SEC EDGAR</b> (US listed companies) and <b>CVM Brasil</b> (BR listed companies). Select found comparables to auto-fill the table below.") +
+                '</div>', unsafe_allow_html=True
             )
 
-        ac1, ac2, ac3 = st.columns([2, 2, 1])
-        with ac1:
-            auto_industry = st.selectbox(
-                "Setor / Industry" if is_pt else "Industry / Sector",
-                ["— Select —"] + ALL_INDUSTRIES,
-                key="auto_industry"
-            )
-            auto_industry = None if auto_industry == "— Select —" else auto_industry
-
-        with ac2:
-            sc1, sc2 = st.columns(2)
-            with sc1:
-                auto_name_edgar = st.text_input(
-                    "Nome (EDGAR)" if is_pt else "Name (EDGAR)",
-                    placeholder="Ex: Pfizer",
-                    key="auto_edgar_name"
-                ) or None
-            with sc2:
-                auto_name_cvm = st.text_input(
-                    "Nome (CVM)" if is_pt else "Name (CVM)",
-                    placeholder="Ex: EMBRAER",
-                    key="auto_cvm_name"
-                ) or None
-
-        with ac3:
-            auto_sources = st.multiselect(
-                "Fontes / Sources",
-                ["SEC EDGAR", "CVM Brasil"],
-                default=["SEC EDGAR", "CVM Brasil"],
-                key="auto_sources"
-            )
-            auto_limit = st.number_input(
-                "Máx resultados" if is_pt else "Max results",
-                min_value=5, max_value=30, value=15, key="auto_limit"
-            )
-            # Same-year comparability: default the search year to the analysis
-            # fiscal year so they can't drift apart.
-            _def_year = int(fiscal_year) if str(fiscal_year).strip().isdigit() else 2024
-            _def_year = min(max(_def_year, 2015), 2025)
-            auto_year = st.number_input(
-                "Exercício / Fiscal Year",
-                min_value=2015, max_value=2025, value=_def_year, step=1, key="auto_year",
-                help=("Os comparáveis virão deste exercício (SEC e CVM). Empresas sem "
-                      "dado deste ano são excluídas — nunca se mistura ano." if is_pt else
-                      "Comparables will come from this fiscal year (SEC and CVM). Companies "
-                      "without data for this year are excluded — years are never mixed.")
-            )
-
-        search_clicked = st.button(
-            "🔍 Buscar Comparáveis" if is_pt else "🔍 Search Comparables",
-            key="auto_search_btn", width="stretch"
-        )
-
-        if search_clicked:
-            # Session-level rate limit: 5 searches per 60s. Protects against SEC EDGAR User-Agent ban
-            # (EDGAR enforces ~10 req/sec total — concurrent abuse breaks Auto Search for everyone).
-            _now_ts = datetime.now().timestamp()
-            _clicks = [t for t in st.session_state.get("auto_search_clicks", []) if _now_ts - t < 60]
-            if len(_clicks) >= 5:
-                st.error(
-                    "⚠️ Limite de **5 buscas por minuto** atingido (proteção contra abuso das APIs públicas SEC EDGAR e CVM). Aguarde alguns segundos e tente novamente."
+            # EBITDA Margin: only SEC EDGAR computes it (CVM DRE doesn't break out D&A).
+            if "MLT" in method and pli_option == "ebitda_margin":
+                st.info(
+                    "ℹ️ **EBITDA Margin:** disponível apenas no SEC EDGAR no momento. "
+                    "CVM Brasil não separa Depreciação/Amortização nas contas padronizadas do DRE consolidado. "
+                    "Se marcar apenas 'CVM Brasil' como fonte, a busca retornará vazia."
                     if is_pt else
-                    "⚠️ Rate limit: **5 searches per minute** (public API abuse protection for SEC EDGAR and CVM). Wait a few seconds and try again."
+                    "ℹ️ **EBITDA Margin:** currently only available from SEC EDGAR. "
+                    "CVM Brasil does not break out D&A in standard consolidated income statement accounts. "
+                    "If you select only 'CVM Brasil' as source, the search will return empty."
                 )
-            elif not auto_industry and not auto_name_edgar and not auto_name_cvm:
-                st.warning("Selecione um setor ou digite um nome para buscar." if is_pt
-                           else "Select an industry or enter a company name to search.")
-            else:
-                _clicks.append(_now_ts)
-                st.session_state["auto_search_clicks"] = _clicks
 
-                # Map pli_label_display → fetcher field. Only PLIs whose data exists in EDGAR/CVM
-                # (see extract_financials in edgar_fetcher.py and calculate_margins_cvm in cvm_fetcher.py).
-                SUPPORTED_PLI_LABEL_MAP = {
-                    PLI_OPTIONS["operating_margin"]: "operating_margin",
-                    PLI_OPTIONS["ebitda_margin"]: "ebitda_margin",
-                    PLI_OPTIONS["net_margin"]: "net_margin",
-                    "Gross Margin / Margem Bruta (%)": "gross_margin",    # PRL
-                    "Gross Markup / Markup Bruto (%)": "gross_margin",    # MCL — derived below
-                }
-                search_pli = SUPPORTED_PLI_LABEL_MAP.get(pli_label_display, "operating_margin")
+            ac1, ac2, ac3 = st.columns([2, 2, 1])
+            with ac1:
+                auto_industry = st.selectbox(
+                    "Setor / Industry" if is_pt else "Industry / Sector",
+                    ["— Select —"] + ALL_INDUSTRIES,
+                    key="auto_industry"
+                )
+                auto_industry = None if auto_industry == "— Select —" else auto_industry
 
-                with st.spinner("🔍 Buscando em SEC EDGAR e CVM Brasil..." if is_pt
-                               else "🔍 Searching SEC EDGAR and CVM Brasil..."):
-                    results_df = find_comparables(
-                        industry=auto_industry,
-                        company_name_edgar=auto_name_edgar,
-                        company_name_cvm=auto_name_cvm,
-                        sources=auto_sources,
-                        year=int(auto_year),
-                        limit=int(auto_limit),
-                        pli=search_pli
-                    )
+            with ac2:
+                sc1, sc2 = st.columns(2)
+                with sc1:
+                    auto_name_edgar = st.text_input(
+                        "Nome (EDGAR)" if is_pt else "Name (EDGAR)",
+                        placeholder="Ex: Pfizer",
+                        key="auto_edgar_name"
+                    ) or None
+                with sc2:
+                    auto_name_cvm = st.text_input(
+                        "Nome (CVM)" if is_pt else "Name (CVM)",
+                        placeholder="Ex: EMBRAER",
+                        key="auto_cvm_name"
+                    ) or None
 
-                # MCL: derive Gross Markup from Gross Margin (algebraic identity).
-                # revenue = cost + gross_profit ⇒ markup_pct = gm_pct / (100 - gm_pct) * 100
-                if "MCL" in method and not results_df.empty and "value" in results_df.columns:
-                    results_df["value"] = results_df["value"].apply(
-                        lambda gm: round(gm / (100 - gm) * 100, 4)
-                        if pd.notna(gm) and gm < 100 else None
-                    )
-                    results_df = results_df.dropna(subset=["value"]).reset_index(drop=True)
-                    # Value was transformed (gross margin → markup). Recast the
-                    # breakdown to match: gross profit ÷ COGS = markup, same filing.
-                    def _to_markup_breakdown(bd):
-                        if not isinstance(bd, dict):
-                            return None
-                        gp, rev = bd.get("num"), bd.get("den")  # gross profit, revenue
-                        if gp is None or rev is None:
-                            return None
-                        cogs = rev - gp
-                        if cogs <= 0:
-                            return None
-                        return {"kind": "markup", "num": gp, "den": cogs,
-                                "margin": round(gp / cogs * 100, 4),
-                                "currency": bd.get("currency", "USD")}
-                    if "breakdown" in results_df.columns:
-                        results_df["breakdown"] = results_df["breakdown"].apply(_to_markup_breakdown)
+            with ac3:
+                auto_sources = st.multiselect(
+                    "Fontes / Sources",
+                    ["SEC EDGAR", "CVM Brasil"],
+                    default=["SEC EDGAR", "CVM Brasil"],
+                    key="auto_sources"
+                )
+                auto_limit = st.number_input(
+                    "Máx resultados" if is_pt else "Max results",
+                    min_value=5, max_value=30, value=15, key="auto_limit"
+                )
+                # Same-year comparability: default the search year to the analysis
+                # fiscal year so they can't drift apart.
+                _def_year = int(fiscal_year) if str(fiscal_year).strip().isdigit() else 2024
+                _def_year = min(max(_def_year, 2015), 2025)
+                auto_year = st.number_input(
+                    "Exercício / Fiscal Year",
+                    min_value=2015, max_value=2025, value=_def_year, step=1, key="auto_year",
+                    help=("Os comparáveis virão deste exercício (SEC e CVM). Empresas sem "
+                          "dado deste ano são excluídas — nunca se mistura ano." if is_pt else
+                          "Comparables will come from this fiscal year (SEC and CVM). Companies "
+                          "without data for this year are excluded — years are never mixed.")
+                )
 
-                if results_df.empty:
-                    st.warning(
-                        "Nenhum comparável encontrado. Tente outro setor ou nome." if is_pt
-                        else "No comparables found. Try a different industry or name."
-                    )
-                else:
-                    st.session_state["auto_results"] = results_df
-                    st.session_state["auto_results_pli_label"] = pli_label_display
-                    st.success(
-                        f"✅ {len(results_df)} comparáveis encontrados!" if is_pt
-                        else f"✅ {len(results_df)} comparables found!"
-                    )
-
-    # Show results and selection
-    if "auto_results" in st.session_state and not st.session_state["auto_results"].empty:
-        res = st.session_state["auto_results"]
-        st.markdown(f"**{'Resultados encontrados — selecione para adicionar:' if is_pt else 'Results found — select to add:'}**")
-
-        # Display as selectable table
-        display_cols = ["name", "value", "source"]
-        if "operating_margin" in res.columns:
-            display_cols = ["name", "value", "operating_margin", "net_margin", "gross_margin", "source"]
-        display_df = res[[c for c in display_cols if c in res.columns]].copy()
-        # Show the actual PLI name in the column header (was generic "PLI Selecionado", which masked which value was being shown)
-        _displayed_pli = st.session_state.get("auto_results_pli_label", pli_label_display)
-        display_df.columns = (
-            ["Empresa", _displayed_pli, "Mg. Operacional (%)", "Mg. Líquida (%)", "Mg. Bruta (%)", "Fonte"]
-            if is_pt and len(display_df.columns) == 6 else
-            ["Company", _displayed_pli, "Op. Margin (%)", "Net Margin (%)", "Gross Margin (%)", "Source"]
-            if len(display_df.columns) == 6 else
-            ["Empresa/Company", _displayed_pli, "Fonte/Source"]
-        )
-
-        # Format numbers
-        for col in display_df.columns[1:-1]:
-            display_df[col] = display_df[col].apply(
-                lambda x: f"{x:.4f}" if pd.notna(x) else "—"
+            search_clicked = st.button(
+                "🔍 Buscar Comparáveis" if is_pt else "🔍 Search Comparables",
+                key="auto_search_btn", width="stretch"
             )
 
-        st.dataframe(display_df, hide_index=False, width="stretch",
-                     height=min(60 + len(res) * 38, 400))
+            if search_clicked:
+                # Session-level rate limit: 5 searches per 60s. Protects against SEC EDGAR User-Agent ban
+                # (EDGAR enforces ~10 req/sec total — concurrent abuse breaks Auto Search for everyone).
+                _now_ts = datetime.now().timestamp()
+                _clicks = [t for t in st.session_state.get("auto_search_clicks", []) if _now_ts - t < 60]
+                if len(_clicks) >= 5:
+                    st.error(
+                        "⚠️ Limite de **5 buscas por minuto** atingido (proteção contra abuso das APIs públicas SEC EDGAR e CVM). Aguarde alguns segundos e tente novamente."
+                        if is_pt else
+                        "⚠️ Rate limit: **5 searches per minute** (public API abuse protection for SEC EDGAR and CVM). Wait a few seconds and try again."
+                    )
+                elif not auto_industry and not auto_name_edgar and not auto_name_cvm:
+                    st.warning("Selecione um setor ou digite um nome para buscar." if is_pt
+                               else "Select an industry or enter a company name to search.")
+                else:
+                    _clicks.append(_now_ts)
+                    st.session_state["auto_search_clicks"] = _clicks
 
-        # Selection
-        sel_label = "Selecionar por índice (ex: 0,1,2):" if is_pt else "Select by index (e.g. 0,1,2):"
-        sel_input = st.text_input(sel_label, placeholder="0,1,2,3,4", key="auto_sel")
+                    # Map pli_label_display → fetcher field. Only PLIs whose data exists in EDGAR/CVM
+                    # (see extract_financials in edgar_fetcher.py and calculate_margins_cvm in cvm_fetcher.py).
+                    SUPPORTED_PLI_LABEL_MAP = {
+                        PLI_OPTIONS["operating_margin"]: "operating_margin",
+                        PLI_OPTIONS["ebitda_margin"]: "ebitda_margin",
+                        PLI_OPTIONS["net_margin"]: "net_margin",
+                        "Gross Margin / Margem Bruta (%)": "gross_margin",    # PRL
+                        "Gross Markup / Markup Bruto (%)": "gross_margin",    # MCL — derived below
+                    }
+                    search_pli = SUPPORTED_PLI_LABEL_MAP.get(pli_label_display, "operating_margin")
 
-        add_label = "➕ Adicionar selecionados à tabela" if is_pt else "➕ Add selected to table"
-        if st.button(add_label, key="auto_add_btn"):
-            try:
-                indices = [int(i.strip()) for i in sel_input.split(",") if i.strip().isdigit()]
-                if not indices:
-                    indices = list(range(min(5, len(res))))
-                added = 0
-                for idx in indices:
-                    if idx < len(res):
-                        row = res.iloc[idx]
-                        _src_url = row.get("source_url", "")
-                        _bd = row.get("breakdown", None)
-                        new_comp = {
-                            "name": row["name"],
-                            "value": float(row["value"]),
-                            "source": row.get("source", "SEC EDGAR / CVM"),
-                            # source_url rides along silently (not shown in the
-                            # manual table) so the PDF can link to the filing.
-                            # CVM rows have no clean permalink → empty/NaN → "".
-                            "source_url": "" if pd.isna(_src_url) else str(_src_url),
-                        }
-                        # breakdown (numerator/revenue/margin from the filing)
-                        # rides along too, when present (SEC rows only today).
-                        if isinstance(_bd, dict):
-                            new_comp["breakdown"] = _bd
-                        # capital employed (PP&E + working capital, same filing)
-                        # enables the Anexo II country-risk adjustment (SEC only).
-                        _ce = row.get("capital_employed", None)
-                        if _ce is not None and pd.notna(_ce):
-                            new_comp["capital_employed"] = float(_ce)
-                        st.session_state.comparables.append(new_comp)
-                        added += 1
-                st.success(
-                    f"✅ {added} comparáveis adicionados!" if is_pt
-                    else f"✅ {added} comparables added!"
+                    with st.spinner("🔍 Buscando em SEC EDGAR e CVM Brasil..." if is_pt
+                                   else "🔍 Searching SEC EDGAR and CVM Brasil..."):
+                        results_df = find_comparables(
+                            industry=auto_industry,
+                            company_name_edgar=auto_name_edgar,
+                            company_name_cvm=auto_name_cvm,
+                            sources=auto_sources,
+                            year=int(auto_year),
+                            limit=int(auto_limit),
+                            pli=search_pli
+                        )
+
+                    # MCL: derive Gross Markup from Gross Margin (algebraic identity).
+                    # revenue = cost + gross_profit ⇒ markup_pct = gm_pct / (100 - gm_pct) * 100
+                    if "MCL" in method and not results_df.empty and "value" in results_df.columns:
+                        results_df["value"] = results_df["value"].apply(
+                            lambda gm: round(gm / (100 - gm) * 100, 4)
+                            if pd.notna(gm) and gm < 100 else None
+                        )
+                        results_df = results_df.dropna(subset=["value"]).reset_index(drop=True)
+                        # Value was transformed (gross margin → markup). Recast the
+                        # breakdown to match: gross profit ÷ COGS = markup, same filing.
+                        def _to_markup_breakdown(bd):
+                            if not isinstance(bd, dict):
+                                return None
+                            gp, rev = bd.get("num"), bd.get("den")  # gross profit, revenue
+                            if gp is None or rev is None:
+                                return None
+                            cogs = rev - gp
+                            if cogs <= 0:
+                                return None
+                            return {"kind": "markup", "num": gp, "den": cogs,
+                                    "margin": round(gp / cogs * 100, 4),
+                                    "currency": bd.get("currency", "USD")}
+                        if "breakdown" in results_df.columns:
+                            results_df["breakdown"] = results_df["breakdown"].apply(_to_markup_breakdown)
+
+                    if results_df.empty:
+                        st.warning(
+                            "Nenhum comparável encontrado. Tente outro setor ou nome." if is_pt
+                            else "No comparables found. Try a different industry or name."
+                        )
+                    else:
+                        st.session_state["auto_results"] = results_df
+                        st.session_state["auto_results_pli_label"] = pli_label_display
+                        st.success(
+                            f"✅ {len(results_df)} comparáveis encontrados!" if is_pt
+                            else f"✅ {len(results_df)} comparables found!"
+                        )
+
+        # Show results and selection
+        if "auto_results" in st.session_state and not st.session_state["auto_results"].empty:
+            res = st.session_state["auto_results"]
+            st.markdown(f"**{'Resultados encontrados — selecione para adicionar:' if is_pt else 'Results found — select to add:'}**")
+
+            # Display as selectable table
+            display_cols = ["name", "value", "source"]
+            if "operating_margin" in res.columns:
+                display_cols = ["name", "value", "operating_margin", "net_margin", "gross_margin", "source"]
+            display_df = res[[c for c in display_cols if c in res.columns]].copy()
+            # Show the actual PLI name in the column header (was generic "PLI Selecionado", which masked which value was being shown)
+            _displayed_pli = st.session_state.get("auto_results_pli_label", pli_label_display)
+            display_df.columns = (
+                ["Empresa", _displayed_pli, "Mg. Operacional (%)", "Mg. Líquida (%)", "Mg. Bruta (%)", "Fonte"]
+                if is_pt and len(display_df.columns) == 6 else
+                ["Company", _displayed_pli, "Op. Margin (%)", "Net Margin (%)", "Gross Margin (%)", "Source"]
+                if len(display_df.columns) == 6 else
+                ["Empresa/Company", _displayed_pli, "Fonte/Source"]
+            )
+
+            # Format numbers
+            for col in display_df.columns[1:-1]:
+                display_df[col] = display_df[col].apply(
+                    lambda x: f"{x:.4f}" if pd.notna(x) else "—"
                 )
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erro: {e}")
 
-# ── COMPARABLES ───────────────────────────────────────────────────────────────
-st.markdown(f"### {L['comparables_title']}")
-st.markdown(f'<div class="info-box">{"ℹ️ Insira os dados dos comparáveis selecionados após análise FAR. Mínimo recomendado: 5 empresas (IN RFB 2.161/2023)." if is_pt else "ℹ️ Enter data for comparables selected after FAR analysis. Recommended minimum: 5 companies (IN RFB 2.161/2023)."}</div>', unsafe_allow_html=True)
+            st.dataframe(display_df, hide_index=False, width="stretch",
+                         height=min(60 + len(res) * 38, 400))
 
-hc1,hc2,hc3,hc4 = st.columns([3,2,2,.5])
-with hc1: st.markdown(f"**{L['comp_name']}**")
-with hc2: st.markdown(f"**{pli_label_display}**")
-with hc3: st.markdown(f"**{L['comp_source']}**")
+            # Selection
+            sel_label = "Selecionar por índice (ex: 0,1,2):" if is_pt else "Select by index (e.g. 0,1,2):"
+            sel_input = st.text_input(sel_label, placeholder="0,1,2,3,4", key="auto_sel")
 
-for i in range(len(st.session_state.comparables)):
-    cn,cv,cs,cd = st.columns([3,2,2,.5])
-    with cn:
-        st.session_state.comparables[i]["name"] = st.text_input(
-            f"n{i}", key=f"cn_{i}", value=st.session_state.comparables[i]["name"],
-            placeholder=f"Company {i+1}", label_visibility="collapsed")
-    with cv:
-        st.session_state.comparables[i]["value"] = st.number_input(
-            f"v{i}", key=f"cv_{i}", value=float(st.session_state.comparables[i]["value"]),
-            step=0.0001, format="%.4f", label_visibility="collapsed")
-    with cs:
-        _current_src = st.session_state.comparables[i]["source"]
-        # Preserve fetcher-provided sources (e.g. "CVM Brasil 2024", "SEC EDGAR")
-        # that aren't in the manual SOURCES list — otherwise selectbox silently
-        # overwrites the real source with SOURCES[0] (=SEC EDGAR), making BR
-        # comparables look like they came from SEC in the final PDF.
-        _options = SOURCES if _current_src in SOURCES else [_current_src] + SOURCES
-        st.session_state.comparables[i]["source"] = st.selectbox(
-            f"s{i}", _options, index=0 if _current_src not in SOURCES else SOURCES.index(_current_src),
-            key=f"cs_{i}", label_visibility="collapsed")
-    with cd:
-        if len(st.session_state.comparables) > 3:
-            if st.button("✕", key=f"del_{i}"):
-                st.session_state.comparables.pop(i); st.rerun()
+            add_label = "➕ Adicionar selecionados à tabela" if is_pt else "➕ Add selected to table"
+            if st.button(add_label, key="auto_add_btn"):
+                try:
+                    indices = [int(i.strip()) for i in sel_input.split(",") if i.strip().isdigit()]
+                    if not indices:
+                        indices = list(range(min(5, len(res))))
+                    added = 0
+                    for idx in indices:
+                        if idx < len(res):
+                            row = res.iloc[idx]
+                            _src_url = row.get("source_url", "")
+                            _bd = row.get("breakdown", None)
+                            new_comp = {
+                                "name": row["name"],
+                                "value": float(row["value"]),
+                                "source": row.get("source", "SEC EDGAR / CVM"),
+                                # source_url rides along silently (not shown in the
+                                # manual table) so the PDF can link to the filing.
+                                # CVM rows have no clean permalink → empty/NaN → "".
+                                "source_url": "" if pd.isna(_src_url) else str(_src_url),
+                            }
+                            # breakdown (numerator/revenue/margin from the filing)
+                            # rides along too, when present (SEC rows only today).
+                            if isinstance(_bd, dict):
+                                new_comp["breakdown"] = _bd
+                            # capital employed (PP&E + working capital, same filing)
+                            # enables the Anexo II country-risk adjustment (SEC only).
+                            _ce = row.get("capital_employed", None)
+                            if _ce is not None and pd.notna(_ce):
+                                new_comp["capital_employed"] = float(_ce)
+                            st.session_state.comparables.append(new_comp)
+                            added += 1
+                    st.success(
+                        f"✅ {added} comparáveis adicionados!" if is_pt
+                        else f"✅ {added} comparables added!"
+                    )
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro: {e}")
 
-col_add, col_clr = st.columns([2,1])
-with col_add:
-    if st.button(L["add_comparable"]):
-        st.session_state.comparables.append({"name":"","value":0.0,"source":"SEC EDGAR"}); st.rerun()
-with col_clr:
-    clr_lbl = "🧹 Limpar em branco" if is_pt else "🧹 Clear blank rows"
-    if st.button(clr_lbl, key="clr_blank"):
-        st.session_state.comparables = [c for c in st.session_state.comparables if c["value"] != 0.0 or c["name"].strip() != ""]
-        st.rerun()
+    # ── COMPARABLES ───────────────────────────────────────────────────────────────
+    st.markdown(f"### {L['comparables_title']}")
+    st.markdown(f'<div class="info-box">{"ℹ️ Insira os dados dos comparáveis selecionados após análise FAR. Mínimo recomendado: 5 empresas (IN RFB 2.161/2023)." if is_pt else "ℹ️ Enter data for comparables selected after FAR analysis. Recommended minimum: 5 companies (IN RFB 2.161/2023)."}</div>', unsafe_allow_html=True)
+
+    hc1,hc2,hc3,hc4 = st.columns([3,2,2,.5])
+    with hc1: st.markdown(f"**{L['comp_name']}**")
+    with hc2: st.markdown(f"**{pli_label_display}**")
+    with hc3: st.markdown(f"**{L['comp_source']}**")
+
+    for i in range(len(st.session_state.comparables)):
+        cn,cv,cs,cd = st.columns([3,2,2,.5])
+        with cn:
+            st.session_state.comparables[i]["name"] = st.text_input(
+                f"n{i}", key=f"cn_{i}", value=st.session_state.comparables[i]["name"],
+                placeholder=f"Company {i+1}", label_visibility="collapsed")
+        with cv:
+            st.session_state.comparables[i]["value"] = st.number_input(
+                f"v{i}", key=f"cv_{i}", value=float(st.session_state.comparables[i]["value"]),
+                step=0.0001, format="%.4f", label_visibility="collapsed")
+        with cs:
+            _current_src = st.session_state.comparables[i]["source"]
+            # Preserve fetcher-provided sources (e.g. "CVM Brasil 2024", "SEC EDGAR")
+            # that aren't in the manual SOURCES list — otherwise selectbox silently
+            # overwrites the real source with SOURCES[0] (=SEC EDGAR), making BR
+            # comparables look like they came from SEC in the final PDF.
+            _options = SOURCES if _current_src in SOURCES else [_current_src] + SOURCES
+            st.session_state.comparables[i]["source"] = st.selectbox(
+                f"s{i}", _options, index=0 if _current_src not in SOURCES else SOURCES.index(_current_src),
+                key=f"cs_{i}", label_visibility="collapsed")
+        with cd:
+            if len(st.session_state.comparables) > 3:
+                if st.button("✕", key=f"del_{i}"):
+                    st.session_state.comparables.pop(i); st.rerun()
+
+    col_add, col_clr = st.columns([2,1])
+    with col_add:
+        if st.button(L["add_comparable"]):
+            st.session_state.comparables.append({"name":"","value":0.0,"source":"SEC EDGAR"}); st.rerun()
+    with col_clr:
+        clr_lbl = "🧹 Limpar em branco" if is_pt else "🧹 Clear blank rows"
+        if st.button(clr_lbl, key="clr_blank"):
+            st.session_state.comparables = [c for c in st.session_state.comparables if c["value"] != 0.0 or c["name"].strip() != ""]
+            st.rerun()
 
 # ── COUNTRY-RISK ADJUSTMENT (Anexo II IN 2.161) ──────────────────────────────
 # The rule treats country risk as a general comparability adjustment (art. 32,
@@ -913,14 +926,14 @@ if "MLT" in method and pli_option == "operating_margin":
 # receipt feeds the Local File (art. 38 §7). Manual quotation entry — automated
 # exchange fetch (CEPEA/B3) is a later slice.
 commodity_pic = None
-if "PIC" in method:
+if is_commodity:
     QSOURCES_PT = ["B3 (Brasil)", "CME / CBOT", "LME", "ICE",
                    "CEPEA/ESALQ (agência de pesquisa)", "Outra bolsa/agência/órgão governamental"]
     QSOURCES_EN = ["B3 (Brazil)", "CME / CBOT", "LME", "ICE",
                    "CEPEA/ESALQ (research agency)", "Other exchange/agency/government body"]
-    pic_title = ("🌾 PIC Commodities — cotação na data + RTC (art. 37–38) — opcional" if is_pt
-                 else "🌾 PIC Commodities — quotation on date + RTC (art. 37–38) — optional")
-    with st.expander(pic_title, expanded=False):
+    pic_title = ("🌾 PIC Commodities — cotação na data + RTC (art. 37–38)" if is_pt
+                 else "🌾 PIC Commodities — quotation on date + RTC (art. 37–38)")
+    with st.expander(pic_title, expanded=True):
         st.caption(
             ("Para commodities, o valor arm's length é a **cotação na data de precificação** "
              "(art. 37, §3), de bolsa/agência reconhecida (art. 36, II), **ajustada** por "
@@ -1073,7 +1086,54 @@ if include_tested:
 st.markdown("<br>", unsafe_allow_html=True)
 if st.button(L["calc_btn"], width="stretch"):
     valid_comps = [c for c in st.session_state.comparables if c["value"] != 0.0]
-    if len(valid_comps) < 3:
+    if is_commodity:
+        # Commodity PIC (art. 37): the arm's-length value is the single quotation
+        # on the pricing date ± adjustments — no comparable set, no IQR. The input
+        # lives in the PIC Commodities block; `commodity_pic` is its result.
+        if commodity_pic is None:
+            st.error(
+                "Preencha a cotação e o preço praticado no bloco PIC Commodities."
+                if is_pt else
+                "Fill in the quotation and the practiced price in the PIC Commodities block."
+            )
+        else:
+            st.session_state["iqr_result"] = None
+            st.session_state["valid_comps"] = []
+            st.session_state["meta"] = dict(
+                company_name=company_name or "—",
+                transaction_description=transaction_desc or "—",
+                tested_party_name=tested_party_name or "—",
+                fiscal_year=fiscal_year or "2024",
+                method=method.split("—")[0].strip(),
+                pli=pli_label_display,
+                analysis_date=datetime.now().strftime("%d/%m/%Y"),
+                language="pt" if is_pt else "en",
+                far_functions=(far_functions or "").strip(),
+                far_assets=(far_assets or "").strip(),
+                far_risks=(far_risks or "").strip(),
+                country_risk=None,
+                lf_group=(group_name or "").strip(),
+                lf_tp_cnpj=(tp_cnpj or "").strip(),
+                lf_rp_name=(rp_name or "").strip(),
+                lf_rp_country=(rp_country or "").strip(),
+                lf_rp_taxid=(rp_taxid or "").strip(),
+                lf_tx_type=(tx_type or "").strip(),
+                lf_tx_value=(tx_value or "").strip(),
+                lf_adj_type=(adj_type or "").strip(),
+                lf_adj_value=(adj_value or "").strip(),
+                lf_adj_note=(adj_note or "").strip(),
+                commodity_pic=commodity_pic)
+            # Commodity method has no IQR/price-range blocks — clear any stale ones.
+            st.session_state.pop("price_iqr_result", None)
+            st.session_state.pop("derived_prices_pairs", None)
+            st.session_state.pop("price_currency", None)
+            _log_event("benchmark_calculated", {
+                "method": method.split("—")[0].strip(),
+                "is_commodity": True,
+                "is_arms_length": bool(commodity_pic.get("is_arms_length")),
+            })
+            st.success("✅ Cálculo concluído!" if is_pt else "✅ Calculation complete!")
+    elif len(valid_comps) < 3:
         st.error("⚠️ Insira pelo menos 3 comparáveis com valores diferentes de zero (mínimo absoluto para cálculo do IQR)." if is_pt else "⚠️ Please enter at least 3 comparables with non-zero values (minimum for IQR calculation).")
     else:
         # IN RFB 2.161/2023 recomenda preferencialmente 5+ comparáveis. Calcula com 3-4 mas avisa.
@@ -1274,188 +1334,267 @@ if "iqr_result" in st.session_state:
     st.divider()
     st.markdown(f"## {L['results_title']}")
 
-    # Country-risk adjustment audit table: margin before → adjustment → after,
-    # per adjusted comparable (same math the PDF shows, visible on screen).
-    _adj_rows = [c for c in vc if isinstance(c.get("cr_adjustment"), dict)]
-    if _adj_rows:
-        with st.expander(
-                f"🌍 {'Ajuste de risco-país aplicado — conferência' if is_pt else 'Country-risk adjustment applied — audit'}",
-                expanded=False):
-            st.dataframe(pd.DataFrame([{
-                ("Empresa" if is_pt else "Company"): c["name"],
-                ("Margem antes (%)" if is_pt else "Margin before (%)"):
-                    f"{c['cr_adjustment']['margin_before']:.4f}",
-                ("Capital empregado (mi)" if is_pt else "Capital employed (M)"):
-                    f"{c['cr_adjustment']['capital_employed']/1e6:,.0f}",
-                ("Ajuste (mi)" if is_pt else "Adjustment (M)"):
-                    f"{c['cr_adjustment']['adjustment']/1e6:+,.0f}",
-                ("Margem ajustada (%)" if is_pt else "Adjusted margin (%)"):
-                    f"{c['cr_adjustment']['adjusted_margin']:.4f}",
-            } for c in _adj_rows]), hide_index=True, width="stretch")
 
-    if iqr.tested_party_value is not None:
-        if iqr.is_arms_length:
-            st.markdown(f'<div class="result-al">✅  {"TRANSAÇÃO ARM\'S LENGTH — Dentro do intervalo interquartil (Q1–Q3)" if is_pt else "ARM\'S LENGTH TRANSACTION — Within the interquartile range (Q1–Q3)"}</div>', unsafe_allow_html=True)
+    # ── Commodity PIC result (art. 37): single quotation ± adjustments, NO IQR.
+    # No Q1/Q2/Q3 metrics, no scatter chart, no comparables table — those belong
+    # to set-based methods. Render a self-contained verdict + figures block.
+    if iqr is None and meta.get("commodity_pic"):
+        cp = meta["commodity_pic"]
+        ccy = cp.get("currency", "")
+        if cp.get("is_arms_length"):
+            st.markdown(
+                f'<div class="result-al">\u2705  '
+                + ("TRANSA\u00c7\u00c3O ARM'S LENGTH \u2014 Pre\u00e7o praticado igual \u00e0 cota\u00e7\u00e3o ajustada na data (art. 37)"
+                   if is_pt else
+                   "ARM'S LENGTH TRANSACTION \u2014 Practiced price equals the adjusted quotation on the date (art. 37)")
+                + '</div>', unsafe_allow_html=True)
         else:
-            adj = abs(iqr.adjustment_needed) if iqr.adjustment_needed else 0
-            pos = ("abaixo do Q1" if iqr.tested_party_value < iqr.q1 else "acima do Q3") if is_pt else ("below Q1" if iqr.tested_party_value < iqr.q1 else "above Q3")
-            st.markdown(f'<div class="result-adj">⚠️  {"AJUSTE NECESSÁRIO" if is_pt else "ADJUSTMENT REQUIRED"} — {("Parte testada está " if is_pt else "Tested party is ")}{pos} | {"Ajuste sugerido" if is_pt else "Suggested adjustment"}: {adj:.4f}</div>', unsafe_allow_html=True)
+            _adj = cp.get("suggested_adjustment", 0.0)
+            st.markdown(
+                f'<div class="result-adj">\u26a0\ufe0f  '
+                + ("AJUSTE NECESS\u00c1RIO \u2014 Pre\u00e7o praticado diverge da cota\u00e7\u00e3o ajustada (art. 37)"
+                   if is_pt else
+                   "ADJUSTMENT REQUIRED \u2014 Practiced price diverges from the adjusted quotation (art. 37)")
+                + f" | {'Ajuste sugerido' if is_pt else 'Suggested adjustment'}: {ccy} {_adj:.4f}</div>",
+                unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
-    if price_iqr_state is not None:
-        st.markdown(f"### {'Bloco 1 — Margens (teste arm\'s length oficial)' if is_pt else 'Block 1 — Margins (official arm\'s length test)'}")
-        st.markdown(f'<div style="color:#6B7280;font-size:13px;margin-bottom:.5rem">{"Indicador testado conforme IN RFB 2.161/2023 (Art. 39 PRL · Art. 41 MCL). O status acima é decidido por este bloco." if is_pt else "Indicator tested per IN RFB 2.161/2023 (Art. 39 PRL · Art. 41 MCL). The status above is decided by this block."}</div>', unsafe_allow_html=True)
+        cm1, cm2, cm3 = st.columns(3)
+        for col, lbl, val in [
+            (cm1, ("Cota\u00e7\u00e3o na data" if is_pt else "Quotation on date"),
+             f"{ccy} {cp.get('quotation_price', 0.0):.4f}"),
+            (cm2, ("Ajustes l\u00edquidos" if is_pt else "Net adjustments"),
+             f"{ccy} {cp.get('adjustments_total', 0.0):+.4f}"),
+            (cm3, ("Refer\u00eancia ajustada (arm's length)" if is_pt else "Adjusted reference (arm's length)"),
+             f"{ccy} {cp.get('reference', 0.0):.4f}")]:
+            with col:
+                st.markdown(
+                    f'<div class="metric-card"><div class="metric-label">{lbl}</div>'
+                    f'<div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
-    m1,m2,m3,m4 = st.columns(4)
-    for col, lbl, val, sub in [
-        (m1,"Q1 — 1º Quartil",f"{iqr.q1:.4f}","Limite inferior"),
-        (m2,"Q2 — Mediana",f"{iqr.median:.4f}","Ponto médio"),
-        (m3,"Q3 — 3º Quartil",f"{iqr.q3:.4f}","Limite superior"),
-        (m4,"IQR (Q3–Q1)",f"{iqr.q3-iqr.q1:.4f}","Amplitude")]:
-        with col:
-            st.markdown(f'<div class="metric-card"><div class="metric-label">{lbl}</div><div class="metric-value">{val}</div><div style="font-size:11px;color:#9CA3AF">{sub}</div></div>', unsafe_allow_html=True)
+        cm4, cm5, cm6 = st.columns(3)
+        for col, lbl, val in [
+            (cm4, ("Pre\u00e7o praticado" if is_pt else "Practiced price"),
+             f"{ccy} {cp.get('practiced_price', 0.0):.4f}"),
+            (cm5, ("Diverg\u00eancia" if is_pt else "Divergence"),
+             f"{ccy} {cp.get('difference', 0.0):+.4f} ({cp.get('pct_diff', 0.0):+.2f}%)"),
+            (cm6, ("Ajuste de TP sugerido" if is_pt else "Suggested TP adjustment"),
+             f"{ccy} {cp.get('suggested_adjustment', 0.0):+.4f}")]:
+            with col:
+                st.markdown(
+                    f'<div class="metric-card"><div class="metric-label">{lbl}</div>'
+                    f'<div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    ch, tc = st.columns([3,2])
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(
+            (f"**Commodity:** {cp.get('commodity') or '\u2014'} \u00b7 "
+             f"**{'Fonte da cota\u00e7\u00e3o' if is_pt else 'Quotation source'}:** {cp.get('source') or '\u2014'} \u00b7 "
+             f"**{'Data de precifica\u00e7\u00e3o' if is_pt else 'Pricing date'}:** {cp.get('pricing_date') or '\u2014'} \u00b7 "
+             f"**{'Recibo RTC' if is_pt else 'RTC receipt'}:** {cp.get('rtc_receipt') or '\u2014'}")
+        )
+        if cp.get("adj_desc"):
+            st.caption(
+                (f"{'Descri\u00e7\u00e3o dos ajustes (art. 37, \u00a71)' if is_pt else 'Adjustments description (art. 37, \u00a71)'}: "
+                 f"{cp['adj_desc']}"))
 
-    with ch:
-        st.markdown(f"**{'Distribuição dos Comparáveis — Intervalo Arm\'s Length' if is_pt else 'Comparables Distribution — Arm\'s Length Range'}**")
-        paired = sorted(zip(iqr.values, [c["name"] or f"C{i+1}" for i,c in enumerate(vc)]))
-        sv, sn = [p[0] for p in paired], [p[1] for p in paired]
-        fig = go.Figure()
-        fig.add_shape(type="rect", x0=-0.5, x1=len(sv)-.5, y0=iqr.q1, y1=iqr.q3,
-                      fillcolor="rgba(45,106,79,.10)", line=dict(color="rgba(45,106,79,.25)", width=1))
-        for yv, lb, ds in [(iqr.q1,"Q1","dash"),(iqr.median,"Median","solid"),(iqr.q3,"Q3","dash")]:
-            fig.add_shape(type="line", x0=-0.5, x1=len(sv)-.5, y0=yv, y1=yv,
-                          line=dict(color="#2D6A4F", width=1.5, dash=ds))
-            fig.add_annotation(x=len(sv)-.4, y=yv, text=f"{lb}: {yv:.4f}", showarrow=False,
-                               font=dict(size=10, color="#2D6A4F"), xanchor="left")
-        fig.add_trace(go.Scatter(x=sn, y=sv, mode="markers",
-                                  marker=dict(size=13, color="#2D6A4F", line=dict(color="white",width=2)),
-                                  name="Comparáveis", hovertemplate="<b>%{x}</b><br>%{y:.4f}<extra></extra>"))
+        st.divider()
+        st.markdown(f"### {'\U0001F4C4 Relat\u00f3rio PDF' if is_pt else '\U0001F4C4 PDF Report'}")
+        try:
+            pdf_bytes = generate_report({**meta, "iqr_result": None, "comparables": []})
+            slug = (meta.get("company_name") or "analysis").replace(" ", "-").lower()
+            _log_event("pdf_generated", {
+                "method": meta.get("method", ""),
+                "is_commodity": True,
+                "company": meta.get("company_name", ""),
+            })
+            st.download_button(label=L["download_pdf"], data=pdf_bytes,
+                               file_name=f"algoritimado-tp-{slug}-{datetime.now().strftime('%Y%m%d')}.pdf",
+                               mime="application/pdf", width="stretch")
+        except Exception as e:
+            st.warning(f"PDF: {e}")
+    else:
+        # Country-risk adjustment audit table: margin before → adjustment → after,
+        # per adjusted comparable (same math the PDF shows, visible on screen).
+        _adj_rows = [c for c in vc if isinstance(c.get("cr_adjustment"), dict)]
+        if _adj_rows:
+            with st.expander(
+                    f"🌍 {'Ajuste de risco-país aplicado — conferência' if is_pt else 'Country-risk adjustment applied — audit'}",
+                    expanded=False):
+                st.dataframe(pd.DataFrame([{
+                    ("Empresa" if is_pt else "Company"): c["name"],
+                    ("Margem antes (%)" if is_pt else "Margin before (%)"):
+                        f"{c['cr_adjustment']['margin_before']:.4f}",
+                    ("Capital empregado (mi)" if is_pt else "Capital employed (M)"):
+                        f"{c['cr_adjustment']['capital_employed']/1e6:,.0f}",
+                    ("Ajuste (mi)" if is_pt else "Adjustment (M)"):
+                        f"{c['cr_adjustment']['adjustment']/1e6:+,.0f}",
+                    ("Margem ajustada (%)" if is_pt else "Adjusted margin (%)"):
+                        f"{c['cr_adjustment']['adjusted_margin']:.4f}",
+                } for c in _adj_rows]), hide_index=True, width="stretch")
+
         if iqr.tested_party_value is not None:
-            tpc = "#16A34A" if iqr.is_arms_length else "#DC2626"
-            tpn = meta.get("tested_party_name") or "Tested Party"
-            fig.add_trace(go.Scatter(x=[tpn], y=[iqr.tested_party_value], mode="markers",
-                                      marker=dict(size=17, color=tpc, symbol="diamond",
-                                                  line=dict(color="white",width=2)),
-                                      name=tpn, hovertemplate=f"<b>{tpn}</b><br>{iqr.tested_party_value:.4f}<extra></extra>"))
-        fig.update_layout(plot_bgcolor="white", paper_bgcolor="white",
-                          font=dict(family="Inter,sans-serif",size=12,color="#374151"),
-                          xaxis=dict(showgrid=False, zeroline=False),
-                          yaxis=dict(showgrid=True, gridcolor="#F3F4F6", zeroline=False,
-                                     title=dict(text=pli_label_display,font=dict(size=11))),
-                          legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
-                          margin=dict(l=20,r=90,t=40,b=20), height=390)
-        fig.add_annotation(x=-0.45, y=(iqr.q1+iqr.q3)/2, text="Arm's<br>Length<br>Range",
-                           showarrow=False, font=dict(size=9,color="#2D6A4F"), xanchor="right")
-        st.plotly_chart(fig, width="stretch")
+            if iqr.is_arms_length:
+                st.markdown(f'<div class="result-al">✅  {"TRANSAÇÃO ARM\'S LENGTH — Dentro do intervalo interquartil (Q1–Q3)" if is_pt else "ARM\'S LENGTH TRANSACTION — Within the interquartile range (Q1–Q3)"}</div>', unsafe_allow_html=True)
+            else:
+                adj = abs(iqr.adjustment_needed) if iqr.adjustment_needed else 0
+                pos = ("abaixo do Q1" if iqr.tested_party_value < iqr.q1 else "acima do Q3") if is_pt else ("below Q1" if iqr.tested_party_value < iqr.q1 else "above Q3")
+                st.markdown(f'<div class="result-adj">⚠️  {"AJUSTE NECESSÁRIO" if is_pt else "ADJUSTMENT REQUIRED"} — {("Parte testada está " if is_pt else "Tested party is ")}{pos} | {"Ajuste sugerido" if is_pt else "Suggested adjustment"}: {adj:.4f}</div>', unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
 
-    with tc:
-        st.markdown(f"**{'Conjunto de Comparáveis' if is_pt else 'Comparable Set'}**")
-        st.dataframe(pd.DataFrame([{"#":i+1,("Empresa" if is_pt else "Company"):c["name"] or f"C{i+1}",
-                                     pli_label_display:f"{c['value']:.4f}",
-                                     ("Fonte" if is_pt else "Source"):c["source"]}
-                                    for i,c in enumerate(vc)]),
-                     hide_index=True, width="stretch",
-                     height=min(60+len(vc)*38,380))
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown(f"**{'Estatísticas' if is_pt else 'Statistics'}**")
-        st.dataframe(pd.DataFrame({"":["Min","Q1","Median","Q3","Max","Std Dev","n"],
-                                    "Valor":[f"{iqr.min_val:.4f}",f"{iqr.q1:.4f}",f"{iqr.median:.4f}",
-                                             f"{iqr.q3:.4f}",f"{iqr.max_val:.4f}",
-                                             f"{np.std(iqr.values):.4f}",str(len(iqr.values))]}),
-                     hide_index=True, width="stretch")
+        if price_iqr_state is not None:
+            st.markdown(f"### {'Bloco 1 — Margens (teste arm\'s length oficial)' if is_pt else 'Block 1 — Margins (official arm\'s length test)'}")
+            st.markdown(f'<div style="color:#6B7280;font-size:13px;margin-bottom:.5rem">{"Indicador testado conforme IN RFB 2.161/2023 (Art. 39 PRL · Art. 41 MCL). O status acima é decidido por este bloco." if is_pt else "Indicator tested per IN RFB 2.161/2023 (Art. 39 PRL · Art. 41 MCL). The status above is decided by this block."}</div>', unsafe_allow_html=True)
 
-    if price_iqr_state is not None:
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown(f"### {'Bloco 2 — Faixa de Preços Derivada (informativa)' if is_pt else 'Block 2 — Derived Price Range (informative)'}")
-        st.markdown(f'<div style="color:#6B7280;font-size:13px;margin-bottom:.5rem">{"Derivada de Preço de Revenda × (1 − margem) ou Custo × (1 + markup). Útil para precificação prospectiva — <b>não é o teste arm\'s length oficial</b>." if is_pt else "Derived from Resale × (1 − margin) or Cost × (1 + markup). Useful for prospective pricing — <b>not the official arm\'s length test</b>."}</div>', unsafe_allow_html=True)
-
-        piqr = price_iqr_state
-        cur = price_currency_state
-        dpp = st.session_state.get("derived_prices_pairs", [])
-
-        pm1, pm2, pm3, pm4 = st.columns(4)
+        m1,m2,m3,m4 = st.columns(4)
         for col, lbl, val, sub in [
-            (pm1, f"Q1 ({cur})", f"{piqr.q1:.4f}", "Limite inferior" if is_pt else "Lower bound"),
-            (pm2, f"Mediana ({cur})", f"{piqr.median:.4f}", "Ponto médio" if is_pt else "Midpoint"),
-            (pm3, f"Q3 ({cur})", f"{piqr.q3:.4f}", "Limite superior" if is_pt else "Upper bound"),
-            (pm4, f"IQR ({cur})", f"{piqr.q3-piqr.q1:.4f}", "Amplitude")]:
+            (m1,"Q1 — 1º Quartil",f"{iqr.q1:.4f}","Limite inferior"),
+            (m2,"Q2 — Mediana",f"{iqr.median:.4f}","Ponto médio"),
+            (m3,"Q3 — 3º Quartil",f"{iqr.q3:.4f}","Limite superior"),
+            (m4,"IQR (Q3–Q1)",f"{iqr.q3-iqr.q1:.4f}","Amplitude")]:
             with col:
                 st.markdown(f'<div class="metric-card"><div class="metric-label">{lbl}</div><div class="metric-value">{val}</div><div style="font-size:11px;color:#9CA3AF">{sub}</div></div>', unsafe_allow_html=True)
 
-        if piqr.tested_party_value is not None:
-            in_range_text = ("dentro" if piqr.is_arms_length else "fora") if is_pt else ("inside" if piqr.is_arms_length else "outside")
-            color = "#16A34A" if piqr.is_arms_length else "#DC2626"
-            st.markdown(f'<div style="margin-top:.8rem;padding:.5rem .8rem;background:#F9FAFB;border-left:3px solid {color};font-size:13px;color:#374151">{"Preço realizado " if is_pt else "Realized price "}<b>{piqr.tested_party_value:.4f} {cur}</b>{" está " if is_pt else " is "}<b style="color:{color}">{in_range_text}</b>{" da faixa derivada (informativo)." if is_pt else " of the derived range (informative)."}</div>', unsafe_allow_html=True)
-
         st.markdown("<br>", unsafe_allow_html=True)
-        pch, ptc = st.columns([3, 2])
+        ch, tc = st.columns([3,2])
 
-        with pch:
-            st.markdown(f"**{'Distribuição dos Preços Derivados' if is_pt else 'Derived Prices Distribution'} ({cur})**")
-            paired_p = sorted(zip(piqr.values, [d["name"] for d in dpp]))
-            psv = [p[0] for p in paired_p]
-            psn = [p[1] for p in paired_p]
-            fig_p = go.Figure()
-            fig_p.add_shape(type="rect", x0=-0.5, x1=len(psv)-.5, y0=piqr.q1, y1=piqr.q3,
+        with ch:
+            st.markdown(f"**{'Distribuição dos Comparáveis — Intervalo Arm\'s Length' if is_pt else 'Comparables Distribution — Arm\'s Length Range'}**")
+            paired = sorted(zip(iqr.values, [c["name"] or f"C{i+1}" for i,c in enumerate(vc)]))
+            sv, sn = [p[0] for p in paired], [p[1] for p in paired]
+            fig = go.Figure()
+            fig.add_shape(type="rect", x0=-0.5, x1=len(sv)-.5, y0=iqr.q1, y1=iqr.q3,
                           fillcolor="rgba(45,106,79,.10)", line=dict(color="rgba(45,106,79,.25)", width=1))
-            for yv, lb, ds in [(piqr.q1,"Q1","dash"),(piqr.median,"Median","solid"),(piqr.q3,"Q3","dash")]:
-                fig_p.add_shape(type="line", x0=-0.5, x1=len(psv)-.5, y0=yv, y1=yv,
+            for yv, lb, ds in [(iqr.q1,"Q1","dash"),(iqr.median,"Median","solid"),(iqr.q3,"Q3","dash")]:
+                fig.add_shape(type="line", x0=-0.5, x1=len(sv)-.5, y0=yv, y1=yv,
                               line=dict(color="#2D6A4F", width=1.5, dash=ds))
-                fig_p.add_annotation(x=len(psv)-.4, y=yv, text=f"{lb}: {yv:.4f}", showarrow=False,
+                fig.add_annotation(x=len(sv)-.4, y=yv, text=f"{lb}: {yv:.4f}", showarrow=False,
                                    font=dict(size=10, color="#2D6A4F"), xanchor="left")
-            fig_p.add_trace(go.Scatter(x=psn, y=psv, mode="markers",
+            fig.add_trace(go.Scatter(x=sn, y=sv, mode="markers",
                                       marker=dict(size=13, color="#2D6A4F", line=dict(color="white",width=2)),
                                       name="Comparáveis", hovertemplate="<b>%{x}</b><br>%{y:.4f}<extra></extra>"))
-            if piqr.tested_party_value is not None:
-                tpc_p = "#16A34A" if piqr.is_arms_length else "#DC2626"
-                tpn_p = meta.get("tested_party_name") or "Tested Party"
-                fig_p.add_trace(go.Scatter(x=[tpn_p], y=[piqr.tested_party_value], mode="markers",
-                                          marker=dict(size=17, color=tpc_p, symbol="diamond",
+            if iqr.tested_party_value is not None:
+                tpc = "#16A34A" if iqr.is_arms_length else "#DC2626"
+                tpn = meta.get("tested_party_name") or "Tested Party"
+                fig.add_trace(go.Scatter(x=[tpn], y=[iqr.tested_party_value], mode="markers",
+                                          marker=dict(size=17, color=tpc, symbol="diamond",
                                                       line=dict(color="white",width=2)),
-                                          name=tpn_p, hovertemplate=f"<b>{tpn_p}</b><br>{piqr.tested_party_value:.4f}<extra></extra>"))
-            fig_p.update_layout(plot_bgcolor="white", paper_bgcolor="white",
+                                          name=tpn, hovertemplate=f"<b>{tpn}</b><br>{iqr.tested_party_value:.4f}<extra></extra>"))
+            fig.update_layout(plot_bgcolor="white", paper_bgcolor="white",
                               font=dict(family="Inter,sans-serif",size=12,color="#374151"),
                               xaxis=dict(showgrid=False, zeroline=False),
                               yaxis=dict(showgrid=True, gridcolor="#F3F4F6", zeroline=False,
-                                         title=dict(text=f"Preço ({cur})",font=dict(size=11))),
+                                         title=dict(text=pli_label_display,font=dict(size=11))),
                               legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
                               margin=dict(l=20,r=90,t=40,b=20), height=390)
-            st.plotly_chart(fig_p, width="stretch", key="chart_price_iqr")
+            fig.add_annotation(x=-0.45, y=(iqr.q1+iqr.q3)/2, text="Arm's<br>Length<br>Range",
+                               showarrow=False, font=dict(size=9,color="#2D6A4F"), xanchor="right")
+            st.plotly_chart(fig, width="stretch")
 
-        with ptc:
-            st.markdown(f"**{'Comparáveis — Margem → Preço' if is_pt else 'Comparables — Margin → Price'}**")
-            mkey = "margin" if (dpp and "margin" in dpp[0]) else "markup"
-            mlabel = ("Margem %" if mkey == "margin" else "Markup %") if is_pt else ("Margin %" if mkey == "margin" else "Markup %")
-            st.dataframe(pd.DataFrame([{
-                "#": i+1,
-                ("Empresa" if is_pt else "Company"): d["name"],
-                mlabel: f"{d[mkey]:.4f}",
-                f"Preço ({cur})": f"{d['price']:.4f}",
-                ("Fonte" if is_pt else "Source"): d["source"]
-            } for i, d in enumerate(dpp)]),
-                hide_index=True, width="stretch",
-                height=min(60+len(dpp)*38, 380))
+        with tc:
+            st.markdown(f"**{'Conjunto de Comparáveis' if is_pt else 'Comparable Set'}**")
+            st.dataframe(pd.DataFrame([{"#":i+1,("Empresa" if is_pt else "Company"):c["name"] or f"C{i+1}",
+                                         pli_label_display:f"{c['value']:.4f}",
+                                         ("Fonte" if is_pt else "Source"):c["source"]}
+                                        for i,c in enumerate(vc)]),
+                         hide_index=True, width="stretch",
+                         height=min(60+len(vc)*38,380))
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown(f"**{'Estatísticas' if is_pt else 'Statistics'}**")
+            st.dataframe(pd.DataFrame({"":["Min","Q1","Median","Q3","Max","Std Dev","n"],
+                                        "Valor":[f"{iqr.min_val:.4f}",f"{iqr.q1:.4f}",f"{iqr.median:.4f}",
+                                                 f"{iqr.q3:.4f}",f"{iqr.max_val:.4f}",
+                                                 f"{np.std(iqr.values):.4f}",str(len(iqr.values))]}),
+                         hide_index=True, width="stretch")
 
-    st.divider()
-    st.markdown(f"### {'📄 Relatório PDF' if is_pt else '📄 PDF Report'}")
-    st.markdown(f'<div class="info-box">{"Relatório formatado conforme IN RFB 2.161/2023 — inclui dados da transação, análise funcional (FAR, se preenchida), intervalo IQR, comparáveis e nota metodológica." if is_pt else "Report formatted per IN RFB 2.161/2023 — includes transaction data, functional analysis (FAR, if filled), IQR range, comparables and methodology note."}</div>', unsafe_allow_html=True)
-    try:
-        pdf_bytes = generate_report({**meta, "iqr_result": iqr, "comparables": vc,
-                                      "tested_party_value": iqr.tested_party_value})
-        slug = (meta.get("company_name") or "analysis").replace(" ","-").lower()
-        _log_event("pdf_generated", {
-            "method": method.split("—")[0].strip(),
-            "pli": pli_option,
-            "company": meta.get("company_name", ""),
-        })
-        st.download_button(label=L["download_pdf"], data=pdf_bytes,
-                           file_name=f"algoritimado-tp-{slug}-{datetime.now().strftime('%Y%m%d')}.pdf",
-                           mime="application/pdf", width="stretch")
-    except Exception as e:
-        st.warning(f"PDF: {e}")
+        if price_iqr_state is not None:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown(f"### {'Bloco 2 — Faixa de Preços Derivada (informativa)' if is_pt else 'Block 2 — Derived Price Range (informative)'}")
+            st.markdown(f'<div style="color:#6B7280;font-size:13px;margin-bottom:.5rem">{"Derivada de Preço de Revenda × (1 − margem) ou Custo × (1 + markup). Útil para precificação prospectiva — <b>não é o teste arm\'s length oficial</b>." if is_pt else "Derived from Resale × (1 − margin) or Cost × (1 + markup). Useful for prospective pricing — <b>not the official arm\'s length test</b>."}</div>', unsafe_allow_html=True)
+
+            piqr = price_iqr_state
+            cur = price_currency_state
+            dpp = st.session_state.get("derived_prices_pairs", [])
+
+            pm1, pm2, pm3, pm4 = st.columns(4)
+            for col, lbl, val, sub in [
+                (pm1, f"Q1 ({cur})", f"{piqr.q1:.4f}", "Limite inferior" if is_pt else "Lower bound"),
+                (pm2, f"Mediana ({cur})", f"{piqr.median:.4f}", "Ponto médio" if is_pt else "Midpoint"),
+                (pm3, f"Q3 ({cur})", f"{piqr.q3:.4f}", "Limite superior" if is_pt else "Upper bound"),
+                (pm4, f"IQR ({cur})", f"{piqr.q3-piqr.q1:.4f}", "Amplitude")]:
+                with col:
+                    st.markdown(f'<div class="metric-card"><div class="metric-label">{lbl}</div><div class="metric-value">{val}</div><div style="font-size:11px;color:#9CA3AF">{sub}</div></div>', unsafe_allow_html=True)
+
+            if piqr.tested_party_value is not None:
+                in_range_text = ("dentro" if piqr.is_arms_length else "fora") if is_pt else ("inside" if piqr.is_arms_length else "outside")
+                color = "#16A34A" if piqr.is_arms_length else "#DC2626"
+                st.markdown(f'<div style="margin-top:.8rem;padding:.5rem .8rem;background:#F9FAFB;border-left:3px solid {color};font-size:13px;color:#374151">{"Preço realizado " if is_pt else "Realized price "}<b>{piqr.tested_party_value:.4f} {cur}</b>{" está " if is_pt else " is "}<b style="color:{color}">{in_range_text}</b>{" da faixa derivada (informativo)." if is_pt else " of the derived range (informative)."}</div>', unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            pch, ptc = st.columns([3, 2])
+
+            with pch:
+                st.markdown(f"**{'Distribuição dos Preços Derivados' if is_pt else 'Derived Prices Distribution'} ({cur})**")
+                paired_p = sorted(zip(piqr.values, [d["name"] for d in dpp]))
+                psv = [p[0] for p in paired_p]
+                psn = [p[1] for p in paired_p]
+                fig_p = go.Figure()
+                fig_p.add_shape(type="rect", x0=-0.5, x1=len(psv)-.5, y0=piqr.q1, y1=piqr.q3,
+                              fillcolor="rgba(45,106,79,.10)", line=dict(color="rgba(45,106,79,.25)", width=1))
+                for yv, lb, ds in [(piqr.q1,"Q1","dash"),(piqr.median,"Median","solid"),(piqr.q3,"Q3","dash")]:
+                    fig_p.add_shape(type="line", x0=-0.5, x1=len(psv)-.5, y0=yv, y1=yv,
+                                  line=dict(color="#2D6A4F", width=1.5, dash=ds))
+                    fig_p.add_annotation(x=len(psv)-.4, y=yv, text=f"{lb}: {yv:.4f}", showarrow=False,
+                                       font=dict(size=10, color="#2D6A4F"), xanchor="left")
+                fig_p.add_trace(go.Scatter(x=psn, y=psv, mode="markers",
+                                          marker=dict(size=13, color="#2D6A4F", line=dict(color="white",width=2)),
+                                          name="Comparáveis", hovertemplate="<b>%{x}</b><br>%{y:.4f}<extra></extra>"))
+                if piqr.tested_party_value is not None:
+                    tpc_p = "#16A34A" if piqr.is_arms_length else "#DC2626"
+                    tpn_p = meta.get("tested_party_name") or "Tested Party"
+                    fig_p.add_trace(go.Scatter(x=[tpn_p], y=[piqr.tested_party_value], mode="markers",
+                                              marker=dict(size=17, color=tpc_p, symbol="diamond",
+                                                          line=dict(color="white",width=2)),
+                                              name=tpn_p, hovertemplate=f"<b>{tpn_p}</b><br>{piqr.tested_party_value:.4f}<extra></extra>"))
+                fig_p.update_layout(plot_bgcolor="white", paper_bgcolor="white",
+                                  font=dict(family="Inter,sans-serif",size=12,color="#374151"),
+                                  xaxis=dict(showgrid=False, zeroline=False),
+                                  yaxis=dict(showgrid=True, gridcolor="#F3F4F6", zeroline=False,
+                                             title=dict(text=f"Preço ({cur})",font=dict(size=11))),
+                                  legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                                  margin=dict(l=20,r=90,t=40,b=20), height=390)
+                st.plotly_chart(fig_p, width="stretch", key="chart_price_iqr")
+
+            with ptc:
+                st.markdown(f"**{'Comparáveis — Margem → Preço' if is_pt else 'Comparables — Margin → Price'}**")
+                mkey = "margin" if (dpp and "margin" in dpp[0]) else "markup"
+                mlabel = ("Margem %" if mkey == "margin" else "Markup %") if is_pt else ("Margin %" if mkey == "margin" else "Markup %")
+                st.dataframe(pd.DataFrame([{
+                    "#": i+1,
+                    ("Empresa" if is_pt else "Company"): d["name"],
+                    mlabel: f"{d[mkey]:.4f}",
+                    f"Preço ({cur})": f"{d['price']:.4f}",
+                    ("Fonte" if is_pt else "Source"): d["source"]
+                } for i, d in enumerate(dpp)]),
+                    hide_index=True, width="stretch",
+                    height=min(60+len(dpp)*38, 380))
+
+        st.divider()
+        st.markdown(f"### {'📄 Relatório PDF' if is_pt else '📄 PDF Report'}")
+        st.markdown(f'<div class="info-box">{"Relatório formatado conforme IN RFB 2.161/2023 — inclui dados da transação, análise funcional (FAR, se preenchida), intervalo IQR, comparáveis e nota metodológica." if is_pt else "Report formatted per IN RFB 2.161/2023 — includes transaction data, functional analysis (FAR, if filled), IQR range, comparables and methodology note."}</div>', unsafe_allow_html=True)
+        try:
+            pdf_bytes = generate_report({**meta, "iqr_result": iqr, "comparables": vc,
+                                          "tested_party_value": iqr.tested_party_value})
+            slug = (meta.get("company_name") or "analysis").replace(" ","-").lower()
+            _log_event("pdf_generated", {
+                "method": method.split("—")[0].strip(),
+                "pli": pli_option,
+                "company": meta.get("company_name", ""),
+            })
+            st.download_button(label=L["download_pdf"], data=pdf_bytes,
+                               file_name=f"algoritimado-tp-{slug}-{datetime.now().strftime('%Y%m%d')}.pdf",
+                               mime="application/pdf", width="stretch")
+        except Exception as e:
+            st.warning(f"PDF: {e}")
 
 # ── ARQUIVO GLOBAL (MASTER FILE) — 2º deliverable obrigatório (art. 58) ───────
 # Group-level qualitative document, required for every obligated taxpayer
