@@ -36,6 +36,13 @@ def calculate_pic_commodity(
         raise ValueError("practiced_price is required")
 
     reference = quotation_price + adjustments_total       # cotação ± ajustes
+    if reference <= 0:
+        # Ajustes líquidos não podem anular/inverter a cotação: uma referência
+        # arm's length ≤ 0 não tem sentido econômico (Art. 37). Sinaliza erro de
+        # entrada em vez de produzir percentual/ajuste com sinal invertido.
+        raise ValueError(
+            "adjusted reference must be positive (quotation + adjustments)"
+        )
     difference = practiced_price - reference               # praticado vs. referência
     suggested_adjustment = reference - practiced_price     # quanto mover a base
     pct_diff = (difference / reference * 100.0) if reference else 0.0

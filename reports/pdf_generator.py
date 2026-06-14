@@ -767,13 +767,18 @@ def generate_report(analysis_data: dict) -> bytes:
         if _adj_desc:
             story.append(Paragraph(
                 ("<b>Ajustes (art. 37, §1):</b> " if lang == "pt"
-                 else "<b>Adjustments (art. 37, §1):</b> ") + _esc_xml(_adj_desc), S["small"]))
+                 else "<b>Adjustments (art. 37, §1):</b> ")
+                + _esc_xml(_adj_desc).replace("\n", "<br/>"), S["small"]))
         _rtc = str(_cp.get("rtc_receipt") or "").strip()
         story.append(Paragraph(
-            (("Registro no RTC (art. 38; IN 2.246/2024): " + (_rtc if _rtc else "a informar")
+            (("Registro no RTC (art. 38 da IN RFB 2.161/2023, alterado pela IN RFB 2.246/2024; "
+              "prazo do art. 64 — até o 10º dia do mês seguinte à celebração do contrato): "
+              + (_rtc if _rtc else "a informar")
               + ". Os contratos de suporte devem ser anexados ao Arquivo Local (art. 38, §7º).")
              if lang == "pt" else
-             ("RTC registration (art. 38; IN 2.246/2024): " + (_rtc if _rtc else "to be provided")
+             ("RTC registration (art. 38 of IN RFB 2.161/2023, as amended by IN RFB 2.246/2024; "
+              "deadline under art. 64 — by the 10th day of the month following contract execution): "
+              + (_rtc if _rtc else "to be provided")
               + ". Supporting contracts must be attached to the Local File (art. 38, §7º).")),
             S["small"]))
         story.append(Spacer(1, 0.4*cm))
@@ -848,19 +853,31 @@ def generate_report(analysis_data: dict) -> bytes:
                   ("lf_group", "lf_tp_cnpj", "lf_rp_name", "lf_rp_country",
                    "lf_rp_taxid", "lf_tx_type", "lf_tx_value"))
     if _has_lf and not is_legacy:
-        cov = (("Cobertura do Arquivo Local simplificado (art. 61 da IN RFB 2.161/2023): "
-                "I) identificação das partes; II) caracterização da transação; III) método; "
-                "IV) comparáveis e intervalos; V) justificativa do método e dos comparáveis "
-                "(análise funcional); VI) ajustes de fim de exercício. Este documento pode ser "
-                "anexado ao Processo Digital no e-CAC; contratos de suporte (art. 38, §7º) e "
-                "Arquivo Global (Master File) devem ser anexados separadamente quando exigidos."
+        cov = (("Cobertura do Arquivo Local simplificado (art. 61 da IN RFB 2.161/2023, exigível "
+                "para transações controladas de R$ 15 mi a R$ 500 mi; abaixo de R$ 15 mi há "
+                "dispensa, e a partir de R$ 500 mi exige-se o Arquivo Local Completo, arts. "
+                "59-60): I) identificação das partes; II) "
+                "caracterização da transação; III) método; IV) comparáveis e intervalos; "
+                "V) justificativa do método e dos comparáveis (análise funcional); VI) ajustes "
+                "de fim de exercício. O Arquivo Local é protocolado no e-CAC via Requerimento de "
+                "documentação de TP (Processos Digitais/e-Processo), em que cada item é anexado "
+                "no slot correspondente (ex.: 'Identificação das Partes Relacionadas', art. 61, "
+                "I), um processo por ano-calendário. Este documento, em PDF, pode compor esse "
+                "Requerimento; contratos de suporte (art. 38, §7º) e Arquivo Global (Master "
+                "File) são anexados em seus próprios slots quando exigidos."
                 if lang == "pt" else
-                "Simplified Local File coverage (art. 61, IN RFB 2.161/2023): "
-                "I) identification of parties; II) characterization of the transaction; "
-                "III) method; IV) comparables and ranges; V) justification of method and "
-                "comparables (functional analysis); VI) year-end adjustments. This document may "
-                "be attached to the e-CAC Digital Process; supporting contracts (art. 38, §7º) "
-                "and the Master File must be attached separately when required."))
+                "Simplified Local File coverage (art. 61, IN RFB 2.161/2023, required for "
+                "controlled transactions from BRL 15M to BRL 500M; below BRL 15M is exempt, and "
+                "from BRL 500M the Complete Local File is required, arts. 59-60): "
+                "I) identification of parties; II) "
+                "characterization of the transaction; III) method; IV) comparables and ranges; "
+                "V) justification of method and comparables (functional analysis); VI) year-end "
+                "adjustments. The Local File is filed at e-CAC through a TP documentation "
+                "Requerimento (Digital Processes/e-Processo), where each item is uploaded to its "
+                "named slot (e.g. 'Identification of Related Parties', art. 61, I), one process "
+                "per calendar year. This PDF document may compose that Requerimento; supporting "
+                "contracts (art. 38, §7º) and the Master File are uploaded to their own slots "
+                "when required."))
         story.append(Spacer(1, 0.2*cm))
         story.append(Paragraph(cov, S["small"]))
 

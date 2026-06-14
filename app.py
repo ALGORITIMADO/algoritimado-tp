@@ -926,18 +926,20 @@ if "PIC" in method:
              "(art. 37, §3), de bolsa/agência reconhecida (art. 36, II), **ajustada** por "
              "diferenças materiais (frete, qualidade, prêmio — art. 37, §1). O preço praticado "
              "é comparado a essa referência; a divergência é o ajuste de TP. A transação deve "
-             "ser registrada no RTC (art. 38; IN 2.246/2024) — informe o recibo."
+             "ser registrada no RTC (art. 38; IN RFB 2.246/2024) — prazo até o 10º dia do mês "
+             "seguinte à celebração do contrato (art. 64). Informe o recibo."
              if is_pt else
              "For commodities, the arm's-length value is the **quotation on the pricing date** "
              "(art. 37, §3) from a recognized exchange/agency (art. 36, II), **adjusted** for "
              "material differences (freight, quality, premium — art. 37, §1). The practiced "
              "price is compared to that reference; divergence is the TP adjustment. The "
-             "transaction must be registered in the RTC (art. 38) — provide the receipt nº.")
+             "transaction must be registered in the RTC (art. 38; IN RFB 2.246/2024) — due by "
+             "the 10th day of the month following contract execution (art. 64). Provide the receipt nº.")
         )
         pcc1, pcc2, pcc3 = st.columns(3)
         with pcc1:
             pic_commodity = st.text_input(
-                "Commodity" if is_pt else "Commodity",
+                "Commodity",
                 placeholder="Ex: Soja em grão" if is_pt else "E.g.: Soybean", key="pic_commodity")
             pic_direction = st.selectbox(
                 "Operação" if is_pt else "Operation",
@@ -1007,10 +1009,21 @@ if "PIC" in method:
             key="pic_adj_desc")
         if pic_quote > 0 and pic_practiced != 0:
             from calculations.commodities import calculate_pic_commodity
-            commodity_pic = calculate_pic_commodity(
-                pic_practiced, pic_quote, pic_adj,
-                direction=("import" if pic_direction in ("Importação", "Import") else "export"),
-                currency=pic_ccy)
+            try:
+                commodity_pic = calculate_pic_commodity(
+                    pic_practiced, pic_quote, pic_adj,
+                    direction=("import" if pic_direction in ("Importação", "Import") else "export"),
+                    currency=pic_ccy)
+            except ValueError:
+                commodity_pic = None
+                st.error(
+                    ("⚠️ A cotação ajustada (cotação ± ajustes) ficou ≤ 0. "
+                     "Revise os ajustes líquidos — eles não podem anular a cotação."
+                     if is_pt else
+                     "⚠️ The adjusted quotation (quotation ± adjustments) is ≤ 0. "
+                     "Review the net adjustments — they cannot cancel out the quotation.")
+                )
+        if commodity_pic is not None:
             commodity_pic.update({"commodity": pic_commodity, "source": pic_source,
                                   "pricing_date": pic_date, "rtc_receipt": pic_rtc,
                                   "adj_desc": pic_adj_desc})

@@ -319,6 +319,26 @@ def test_pic_commodity_math():
     assert r3["reference"] == 95.0 and r3["is_arms_length"] is True
 
 
+def test_pic_commodity_guards():
+    # Quotation must be positive
+    try:
+        calculate_pic_commodity(100.0, 0.0, 0.0)
+        assert False, "expected ValueError for non-positive quotation"
+    except ValueError:
+        pass
+    # Adjustments cannot cancel/invert the quotation (reference must stay > 0)
+    try:
+        calculate_pic_commodity(100.0, 100.0, -100.0)
+        assert False, "expected ValueError for reference <= 0"
+    except ValueError:
+        pass
+    try:
+        calculate_pic_commodity(100.0, 100.0, -120.0)
+        assert False, "expected ValueError for negative reference"
+    except ValueError:
+        pass
+
+
 def test_pdf_with_commodity_pic():
     iqr = calculate_iqr([100.0, 102.0, 98.0], tested_party_value=101.0)
     cp = calculate_pic_commodity(98.0, 100.0, 5.0, direction="import", currency="USD")
