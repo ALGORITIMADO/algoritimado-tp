@@ -276,11 +276,10 @@ with st.sidebar:
     st.markdown('<a href="https://algoritimado.com" target="_blank" style="font-size:12px;color:#2D6A4F;font-weight:600">algoritimado.com ↗</a>', unsafe_allow_html=True)
 
 # ── LANGUAGE TOGGLE (top of page; mirrors the sidebar selector) ───────────────
-_lt_spacer, _lt_pick = st.columns([3, 2])
-with _lt_pick:
-    st.radio("🌐 Idioma / Language", _LANG_OPTS, key="lang_top",
-             on_change=_sync_lang, args=("lang_top",),
-             horizontal=True, label_visibility="collapsed")
+# Full-width, visible label, at the very top so it's unmissable on first load
+# (incl. mobile, where the sidebar is collapsed).
+st.radio("🌐 Idioma / Language", _LANG_OPTS, key="lang_top",
+         on_change=_sync_lang, args=("lang_top",), horizontal=True)
 
 # ── HEADER ────────────────────────────────────────────────────────────────────
 c_h, c_b = st.columns([5,1])
