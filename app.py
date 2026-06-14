@@ -281,16 +281,14 @@ if is_pt:
     st.info(
         "**ℹ️ Como usar o app:**\n\n"
         "**1.** Selecione o método de TP e o PLI (Indicador de Nível de Lucro)\n\n"
-        "**2.** Adicione comparáveis manualmente OU use o Auto Search (SEC EDGAR + CVM)\n\n"
-        "⚠️ *Resultados do Auto Search aparecem no final da tabela — role para baixo na seção 'Conjunto de Comparáveis' para visualizá-los*\n\n"
+        "**2.** Adicione comparáveis manualmente OU use o Auto Search (SEC EDGAR + CVM) — os resultados preenchem a tabela 'Conjunto de Comparáveis' automaticamente\n\n"
         "**3.** Clique em **Calcular Intervalo Arm's Length** para gerar análise IQR e relatório PDF"
     )
 else:
     st.info(
         "**ℹ️ How to use:**\n\n"
         "**1.** Select the TP method and the PLI (Profit Level Indicator)\n\n"
-        "**2.** Add comparables manually OR use Auto Search (SEC EDGAR + CVM)\n\n"
-        "⚠️ *Auto Search results appear at the bottom of the table — scroll down to the 'Comparable Set' section to view them*\n\n"
+        "**2.** Add comparables manually OR use Auto Search (SEC EDGAR + CVM) — results fill the 'Comparable Set' table automatically\n\n"
         "**3.** Click **Calculate Arm's Length Range** to generate IQR analysis and PDF report"
     )
 
@@ -763,6 +761,15 @@ if not is_commodity:
                                 new_comp["capital_employed"] = float(_ce)
                             st.session_state.comparables.append(new_comp)
                             added += 1
+                    # Drop the empty placeholder rows the table starts with, so the
+                    # fetched comparables rise to the TOP and are visible without
+                    # scrolling (same prune as the "Clear blank rows" button). Only
+                    # when something was actually fetched — otherwise keep the blank
+                    # rows so the manual table isn't left empty.
+                    if added:
+                        st.session_state.comparables = [
+                            c for c in st.session_state.comparables
+                            if c["value"] != 0.0 or c["name"].strip() != ""]
                     st.success(
                         f"✅ {added} comparáveis adicionados!" if is_pt
                         else f"✅ {added} comparables added!"
