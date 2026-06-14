@@ -315,9 +315,9 @@ TX_TYPE_OPTIONS_EN = ["Import of goods", "Export of goods",
                       "Services", "Rights / royalties", "Intangibles",
                       "Financial transactions", "Business restructuring",
                       "Cost sharing", "Other"]
-parties_title = ("🏢 Identificação das Partes e da Transação (art. 61, I e II) — opcional"
+parties_title = ("🏢 Identificação das Partes e da Transação (art. 61, I e II) — obrigatório para o Arquivo Local fileável"
                  if is_pt else
-                 "🏢 Identification of Parties and Transaction (art. 61, I and II) — optional")
+                 "🏢 Identification of Parties and Transaction (art. 61, I and II) — required for the fileable Local File")
 with st.expander(parties_title, expanded=False):
     st.caption(
         ("O art. 61, I exige identificar as entidades da transação controlada "
