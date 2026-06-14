@@ -219,13 +219,30 @@ PLI_OPTIONS = {"operating_margin":"Operating Margin / Margem Operacional (%)",
 if "comparables" not in st.session_state:
     st.session_state.comparables = [{"name":"","value":0.0,"source":"SEC EDGAR"} for _ in range(5)]
 
+# ── LANGUAGE ──────────────────────────────────────────────────────────────────
+# Single source of truth for the UI language, driven by TWO synced selectors:
+# one at the top of the main page (visible on first load, incl. mobile) and one
+# in the sidebar. Each writes to its own widget key; the on_change callback
+# mirrors the change to the other so they never desync. is_pt/L are computed here
+# (before the sidebar renders) because the sidebar content itself uses them.
+_LANG_OPTS = ["🇧🇷 Português", "🇺🇸 English"]
+st.session_state.setdefault("lang_sb", _LANG_OPTS[0])
+st.session_state.setdefault("lang_top", _LANG_OPTS[0])
+
+def _sync_lang(src):
+    v = st.session_state[src]
+    st.session_state["lang_sb"] = v
+    st.session_state["lang_top"] = v
+
+is_pt = "Português" in st.session_state["lang_sb"]
+L = _labels(is_pt)
+
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown('<div style="text-align:center;padding:1rem 0"><div style="font-size:22px;font-weight:800;color:#1B4332;letter-spacing:2px">🌿 ALGORITIMADO</div><div style="font-size:11px;color:#6B7280;margin-top:4px">Transfer Pricing Intelligence</div><div style="font-size:11px;color:#2D6A4F;font-weight:600">Lei 14.596/2023 · OECD</div></div>', unsafe_allow_html=True)
     st.divider()
-    lang = st.selectbox("🌐 Language / Idioma", ["🇧🇷 Português","🇺🇸 English"])
-    is_pt = "Português" in lang
-    L = _labels(is_pt)
+    st.selectbox("🌐 Language / Idioma", _LANG_OPTS, key="lang_sb",
+                 on_change=_sync_lang, args=("lang_sb",))
     st.divider()
     st.markdown(f"**{L['method_label']}**")
     method = st.selectbox("method_sel", METHOD_OPTIONS, label_visibility="collapsed")
@@ -257,6 +274,13 @@ with st.sidebar:
     st.markdown(f"**{L['about_title']}**")
     st.markdown(f'<div style="font-size:12px;color:#6B7280">{L["about_text"]}</div>', unsafe_allow_html=True)
     st.markdown('<a href="https://algoritimado.com" target="_blank" style="font-size:12px;color:#2D6A4F;font-weight:600">algoritimado.com ↗</a>', unsafe_allow_html=True)
+
+# ── LANGUAGE TOGGLE (top of page; mirrors the sidebar selector) ───────────────
+_lt_spacer, _lt_pick = st.columns([3, 2])
+with _lt_pick:
+    st.radio("🌐 Idioma / Language", _LANG_OPTS, key="lang_top",
+             on_change=_sync_lang, args=("lang_top",),
+             horizontal=True, label_visibility="collapsed")
 
 # ── HEADER ────────────────────────────────────────────────────────────────────
 c_h, c_b = st.columns([5,1])
