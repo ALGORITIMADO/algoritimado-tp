@@ -115,50 +115,80 @@ def _hydrate_identity_from_url() -> None:
     _log_event("session_start_from_landing")
 
 def _inline_signup_form() -> None:
+    # Language picker on the FIRST screen — OUTSIDE st.form so it switches the
+    # language live (widgets inside st.form only apply on submit). Mirrors the
+    # sidebar selector via _sync_lang.
+    _lg_l, _lg_r = st.columns([3, 1])
+    with _lg_r:
+        st.radio("🌐 Idioma / Language", _LANG_OPTS, key="lang_gate",
+                 on_change=_sync_lang, args=("lang_gate",),
+                 horizontal=True, label_visibility="collapsed")
     st.title("📊 Algoritimado — Transfer Pricing Intelligence")
     st.markdown(
         "Preencha os campos abaixo para acessar a plataforma. "
         "Leva 30 segundos, é gratuito, e segue os requisitos da Lei 14.596/2023."
+        if is_pt else
+        "Fill in the fields below to access the platform. "
+        "It takes 30 seconds, it's free, and follows the requirements of Law 14.596/2023."
     )
     with st.form("signup_form", clear_on_submit=False):
         c1, c2 = st.columns(2)
         with c1:
-            nome = st.text_input("Nome completo *", placeholder="Ex: Maria Silva")
-            empresa = st.text_input("Empresa *", placeholder="Ex: ABC Consultoria Tributária")
+            nome = st.text_input("Nome completo *" if is_pt else "Full name *",
+                                 placeholder="Ex: Maria Silva" if is_pt else "E.g.: Maria Silva")
+            empresa = st.text_input("Empresa *" if is_pt else "Company *",
+                                    placeholder="Ex: ABC Consultoria Tributária" if is_pt else "E.g.: ABC Tax Advisory")
         with c2:
-            email = st.text_input("Email profissional *", placeholder="voce@empresa.com.br")
-            cargo = st.text_input("Cargo (opcional)", placeholder="Ex: Tax Manager")
+            email = st.text_input("Email profissional *" if is_pt else "Work email *",
+                                  placeholder="voce@empresa.com.br" if is_pt else "you@company.com")
+            cargo = st.text_input("Cargo (opcional)" if is_pt else "Role (optional)",
+                                  placeholder="Ex: Tax Manager" if is_pt else "E.g.: Tax Manager")
         consent_lgpd = st.checkbox(
-            "Li e concordo com a Política de Privacidade e os Termos de Uso da Algoritimado, "
-            "e autorizo o tratamento dos meus dados pessoais (nome, email, empresa, cargo) "
-            "para liberação de acesso à plataforma, em conformidade com a LGPD (Lei 13.709/2018). *",
+            ("Li e concordo com a Política de Privacidade e os Termos de Uso da Algoritimado, "
+             "e autorizo o tratamento dos meus dados pessoais (nome, email, empresa, cargo) "
+             "para liberação de acesso à plataforma, em conformidade com a LGPD (Lei 13.709/2018). *"
+             if is_pt else
+             "I have read and agree to Algoritimado's Privacy Policy and Terms of Use, and I "
+             "authorize the processing of my personal data (name, email, company, role) to grant "
+             "access to the platform, in compliance with Brazil's LGPD (Law 13.709/2018). *"),
             value=False,
             key="consent_lgpd_checkbox",
         )
         opt_in = st.checkbox(
-            "Também aceito receber comunicações da Algoritimado sobre Transfer Pricing "
-            "e atualizações da plataforma (opcional).",
+            ("Também aceito receber comunicações da Algoritimado sobre Transfer Pricing "
+             "e atualizações da plataforma (opcional)."
+             if is_pt else
+             "I also agree to receive communications from Algoritimado about Transfer Pricing "
+             "and platform updates (optional)."),
             value=False,
             key="opt_in_marketing_checkbox",
         )
         st.markdown(
             '<div style="font-size:11px;color:#6B7280;margin-top:.6rem;line-height:1.5">'
-            '<a href="https://algoritimado.com/policies/privacy-policy" target="_blank" style="color:#2D6A4F;font-weight:600">Política de Privacidade</a> · '
-            '<a href="https://algoritimado.com/policies/terms-of-service" target="_blank" style="color:#2D6A4F;font-weight:600">Termos de Uso</a>. '
-            'Você pode revogar consentimentos e solicitar exclusão dos seus dados a qualquer momento via '
-            '<a href="mailto:contato@algoritimado.com" style="color:#2D6A4F;font-weight:600">contato@algoritimado.com</a>.'
+            '<a href="https://algoritimado.com/policies/privacy-policy" target="_blank" style="color:#2D6A4F;font-weight:600">'
+            + ("Política de Privacidade" if is_pt else "Privacy Policy") + '</a> · '
+            '<a href="https://algoritimado.com/policies/terms-of-service" target="_blank" style="color:#2D6A4F;font-weight:600">'
+            + ("Termos de Uso" if is_pt else "Terms of Use") + '</a>. '
+            + ("Você pode revogar consentimentos e solicitar exclusão dos seus dados a qualquer momento via "
+               if is_pt else
+               "You can withdraw your consent and request deletion of your data at any time via ")
+            + '<a href="mailto:contato@algoritimado.com" style="color:#2D6A4F;font-weight:600">contato@algoritimado.com</a>.'
             '</div>',
             unsafe_allow_html=True
         )
         submitted = st.form_submit_button(
-            "Acessar a plataforma →", type="primary", width="stretch"
+            ("Acessar a plataforma →" if is_pt else "Access the platform →"),
+            type="primary", width="stretch"
         )
         if submitted:
             nome_v, email_v, empresa_v = nome.strip(), email.strip(), empresa.strip()
             if not nome_v or "@" not in email_v or not empresa_v:
-                st.error("⚠️ Preencha nome, email válido (com @) e empresa.")
+                st.error("⚠️ Preencha nome, email válido (com @) e empresa." if is_pt
+                         else "⚠️ Please fill in name, a valid email (with @) and company.")
             elif not consent_lgpd:
-                st.error("⚠️ Para acessar a plataforma é necessário concordar com o tratamento de dados (LGPD).")
+                st.error("⚠️ Para acessar a plataforma é necessário concordar com o tratamento de dados (LGPD)."
+                         if is_pt else
+                         "⚠️ To access the platform you must agree to the data processing (LGPD).")
             else:
                 st.session_state["user_email"] = email_v
                 st.session_state["user_name"] = nome_v
@@ -173,6 +203,22 @@ def _inline_signup_form() -> None:
                 _log_event("session_start_direct")
                 st.rerun()
     st.stop()
+
+# ── LANGUAGE (single source of truth) ─────────────────────────────────────────
+# Established BEFORE the signup gate so the FIRST screen (the signup form) can be
+# bilingual and carry its own language picker. Two synced selectors: one on the
+# signup screen (key "lang_gate") and one in the sidebar (key "lang_sb"); the
+# on_change callback mirrors the change so they never desync.
+_LANG_OPTS = ["🇧🇷 Português", "🇺🇸 English"]
+st.session_state.setdefault("lang_sb", _LANG_OPTS[0])
+st.session_state.setdefault("lang_gate", _LANG_OPTS[0])
+
+def _sync_lang(src):
+    v = st.session_state[src]
+    st.session_state["lang_sb"] = v
+    st.session_state["lang_gate"] = v
+
+is_pt = "Português" in st.session_state["lang_sb"]
 
 _hydrate_identity_from_url()
 if not st.session_state.get("authenticated"):
@@ -226,22 +272,8 @@ PLI_OPTIONS = {"operating_margin":"Operating Margin / Margem Operacional (%)",
 if "comparables" not in st.session_state:
     st.session_state.comparables = [{"name":"","value":0.0,"source":"SEC EDGAR"} for _ in range(5)]
 
-# ── LANGUAGE ──────────────────────────────────────────────────────────────────
-# Single source of truth for the UI language, driven by TWO synced selectors:
-# one at the top of the main page (visible on first load, incl. mobile) and one
-# in the sidebar. Each writes to its own widget key; the on_change callback
-# mirrors the change to the other so they never desync. is_pt/L are computed here
-# (before the sidebar renders) because the sidebar content itself uses them.
-_LANG_OPTS = ["🇧🇷 Português", "🇺🇸 English"]
-st.session_state.setdefault("lang_sb", _LANG_OPTS[0])
-st.session_state.setdefault("lang_top", _LANG_OPTS[0])
-
-def _sync_lang(src):
-    v = st.session_state[src]
-    st.session_state["lang_sb"] = v
-    st.session_state["lang_top"] = v
-
-is_pt = "Português" in st.session_state["lang_sb"]
+# Language state (is_pt, _LANG_OPTS, _sync_lang) is established before the signup
+# gate above. _labels is defined after the gate, so the labels dict is built here.
 L = _labels(is_pt)
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────
@@ -281,12 +313,6 @@ with st.sidebar:
     st.markdown(f"**{L['about_title']}**")
     st.markdown(f'<div style="font-size:12px;color:#6B7280">{L["about_text"]}</div>', unsafe_allow_html=True)
     st.markdown('<a href="https://algoritimado.com" target="_blank" style="font-size:12px;color:#2D6A4F;font-weight:600">algoritimado.com ↗</a>', unsafe_allow_html=True)
-
-# ── LANGUAGE TOGGLE (top of page; mirrors the sidebar selector) ───────────────
-# Full-width, visible label, at the very top so it's unmissable on first load
-# (incl. mobile, where the sidebar is collapsed).
-st.radio("🌐 Idioma / Language", _LANG_OPTS, key="lang_top",
-         on_change=_sync_lang, args=("lang_top",), horizontal=True)
 
 # ── HEADER ────────────────────────────────────────────────────────────────────
 c_h, c_b = st.columns([5,1])
