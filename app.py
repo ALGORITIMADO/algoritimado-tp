@@ -285,12 +285,6 @@ with st.sidebar:
 # ── LANGUAGE TOGGLE (top of page; mirrors the sidebar selector) ───────────────
 # Full-width, visible label, at the very top so it's unmissable on first load
 # (incl. mobile, where the sidebar is collapsed).
-# TEMP build marker (diagnostic): confirms the latest deploy reached the user.
-st.markdown(
-    '<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6px;'
-    'padding:6px 10px;margin-bottom:6px;font-size:13px;color:#92400E">'
-    '🔧 Build 2026-06-15 · seletor de idioma logo abaixo 👇</div>',
-    unsafe_allow_html=True)
 st.radio("🌐 Idioma / Language", _LANG_OPTS, key="lang_top",
          on_change=_sync_lang, args=("lang_top",), horizontal=True)
 
