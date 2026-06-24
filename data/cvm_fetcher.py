@@ -286,9 +286,8 @@ def fetch_comparables_cvm(
     if dre is None:
         return pd.DataFrame()
 
-    # CVM source link intentionally omitted — the open-data LINK_DOC is a ZIP
-    # download, not a viewable page (see src_url below). Skipping the fetch also
-    # speeds up the CVM search.
+    # Official DFP document links (audit trail) — maps CD_CVM -> LINK_DOC.
+    doc_links = get_cvm_doc_links(year)
 
     # Identify key columns
     name_cols = [c for c in companies.columns if any(k in c.upper()
@@ -316,11 +315,13 @@ def fetch_comparables_cvm(
         company_nm = str(row[name_col])
         margins = calculate_margins_cvm(dre, company_code, dre_code_col)
         if margins and pli in margins:
-            # No source link for CVM rows (decision 24/06): the only available CVM
-            # link (LINK_DOC from the open-data index) is a ZIP DOWNLOAD of the DFP
-            # package (PDF + XMLs), not a viewable page — poor UX, so we omit it.
-            # A proper viewable CVM source link is future work.
-            src_url = ""
+            # Audit trail: official CVM DFP document link (downloads the filed
+            # DFP package — PDF + XMLs) from the open-data index. The earlier RAD
+            # search-form link opened empty; this one opens the actual document.
+            try:
+                src_url = doc_links.get(int(float(company_code)), "")
+            except (TypeError, ValueError):
+                src_url = ""
             results.append({
                 "name": company_nm,
                 "value": margins[pli],
