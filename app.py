@@ -47,12 +47,10 @@ import threading as _threading
 import urllib.request as _urlreq
 from datetime import timezone as _tz
 
-def _post_to_webhook(rec: dict) -> None:
-    url = ""
-    try:
-        url = st.secrets.get("WEBHOOK_URL", "")
-    except Exception:
-        url = ""
+def _post_to_webhook(rec: dict, url: str) -> None:
+    # url is read in the MAIN script thread by _log_event and passed in — reading
+    # st.secrets from this background thread is unreliable (it broke silently after
+    # a Streamlit version bump, making the webhook stop without any error).
     if not url:
         return
     try:
@@ -79,7 +77,16 @@ def _log_event(event_type: str, payload: dict | None = None) -> None:
         "payload": payload or {},
     }
     print("[ALGORITIMADO_EVENT] " + _json.dumps(rec, ensure_ascii=False), flush=True)
-    _threading.Thread(target=_post_to_webhook, args=(rec,), daemon=True).start()
+    # Read the secret HERE, in the main script thread (st.secrets is reliable in the
+    # script thread, NOT in a background thread). Pass the URL into the daemon thread.
+    try:
+        _url = st.secrets.get("WEBHOOK_URL", "")
+    except Exception:
+        _url = ""
+    if not _url:
+        # Make the failure loud in the logs instead of silently dropping the event.
+        print("[ALGORITIMADO_WEBHOOK_SKIP] WEBHOOK_URL ausente/vazio — evento NÃO enviado ao Sheets", flush=True)
+    _threading.Thread(target=_post_to_webhook, args=(rec, _url), daemon=True).start()
 
 def _get_query_params() -> dict:
     try:
