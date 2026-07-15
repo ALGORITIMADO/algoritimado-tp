@@ -272,6 +272,15 @@ PLI_OPTIONS = {"operating_margin":"Operating Margin / Margem Operacional (%)",
 if "comparables" not in st.session_state:
     st.session_state.comparables = [{"name":"","value":0.0,"source":"SEC EDGAR"} for _ in range(5)]
 
+def _reset_comp_widget_state():
+    """Clear per-row widget state (cn_i/cv_i/cs_i). Streamlit >=1.5x keeps keyed
+    widget state across reruns and ignores a changed value= default, so any
+    programmatic reorder/prune of st.session_state.comparables must clear these
+    keys — otherwise the stale widget values overwrite the new list on render."""
+    for _k in list(st.session_state.keys()):
+        if isinstance(_k, str) and _k.startswith(("cn_", "cv_", "cs_")):
+            del st.session_state[_k]
+
 # Language state (is_pt, _LANG_OPTS, _sync_lang) is established before the signup
 # gate above. _labels is defined after the gate, so the labels dict is built here.
 L = _labels(is_pt)
@@ -714,6 +723,17 @@ if not is_commodity:
                             pli=search_pli
                         )
 
+                    _log_event("auto_search_run", {
+                        "industry": auto_industry or "",
+                        "name_edgar": auto_name_edgar or "",
+                        "name_cvm": auto_name_cvm or "",
+                        "sources": ",".join(auto_sources),
+                        "year": int(auto_year),
+                        "pli": search_pli,
+                        "method": method.split("—")[0].strip(),
+                        "n_results": int(len(results_df)),
+                    })
+
                     # MCL: derive Gross Markup from Gross Margin (algebraic identity).
                     # revenue = cost + gross_profit ⇒ markup_pct = gm_pct / (100 - gm_pct) * 100
                     if "MCL" in method and not results_df.empty and "value" in results_df.columns:
@@ -817,25 +837,29 @@ if not is_commodity:
                                 new_comp["capital_employed"] = float(_ce)
                             st.session_state.comparables.append(new_comp)
                             added += 1
-                    # Drop the empty placeholder rows the table starts with, so the
-                    # fetched comparables rise to the TOP and are visible without
-                    # scrolling (same prune as the "Clear blank rows" button). Only
-                    # when something was actually fetched — otherwise keep the blank
-                    # rows so the manual table isn't left empty.
+                    # Fetched comparables go to the TOP of the table; existing
+                    # non-blank rows stay below them, blank placeholders are pruned.
+                    # Widget keys must be cleared or the reorder is invisible
+                    # (stale per-row widget state wins on the next render).
                     if added:
-                        st.session_state.comparables = [
-                            c for c in st.session_state.comparables
-                            if c["value"] != 0.0 or c["name"].strip() != ""]
-                    st.success(
-                        f"✅ {added} comparáveis adicionados!" if is_pt
-                        else f"✅ {added} comparables added!"
-                    )
+                        _fetched = st.session_state.comparables[-added:]
+                        _prior = [c for c in st.session_state.comparables[:-added]
+                                  if c["value"] != 0.0 or c["name"].strip() != ""]
+                        st.session_state.comparables = _fetched + _prior
+                        _reset_comp_widget_state()
+                        st.session_state["_auto_added_flash"] = added
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro: {e}")
 
     # ── COMPARABLES ───────────────────────────────────────────────────────────────
     st.markdown(f"### {L['comparables_title']}")
+    _flash = st.session_state.pop("_auto_added_flash", None)
+    if _flash:
+        st.success(
+            f"✅ {_flash} comparáveis do Auto Search adicionados no topo da tabela!" if is_pt
+            else f"✅ {_flash} Auto Search comparables added to the top of the table!"
+        )
     st.markdown(f'<div class="info-box">{"ℹ️ Insira os dados dos comparáveis selecionados após análise FAR. Mínimo recomendado: 5 empresas (IN RFB 2.161/2023)." if is_pt else "ℹ️ Enter data for comparables selected after FAR analysis. Recommended minimum: 5 companies (IN RFB 2.161/2023)."}</div>', unsafe_allow_html=True)
 
     hc1,hc2,hc3,hc4 = st.columns([3,2,2,.5])
@@ -866,7 +890,7 @@ if not is_commodity:
         with cd:
             if len(st.session_state.comparables) > 3:
                 if st.button("✕", key=f"del_{i}"):
-                    st.session_state.comparables.pop(i); st.rerun()
+                    st.session_state.comparables.pop(i); _reset_comp_widget_state(); st.rerun()
 
     col_add, col_clr = st.columns([2,1])
     with col_add:
@@ -876,6 +900,7 @@ if not is_commodity:
         clr_lbl = "🧹 Limpar em branco" if is_pt else "🧹 Clear blank rows"
         if st.button(clr_lbl, key="clr_blank"):
             st.session_state.comparables = [c for c in st.session_state.comparables if c["value"] != 0.0 or c["name"].strip() != ""]
+            _reset_comp_widget_state()
             st.rerun()
 
 # ── COUNTRY-RISK ADJUSTMENT (Anexo II IN 2.161) ──────────────────────────────
