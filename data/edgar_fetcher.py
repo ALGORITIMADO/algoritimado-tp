@@ -2,7 +2,7 @@ import requests
 import pandas as pd
 import streamlit as st
 import time
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
 
 HEADERS = {"User-Agent": "Algoritimado research@algoritimado.com"}
 EDGAR_BASE = "https://data.sec.gov"
@@ -135,6 +135,17 @@ SIC_MAP = {
         (1053507, "American Tower Corp"),
     ],
 }
+
+
+def _all_seed_companies() -> List[Tuple[int, str]]:
+    """Every seed company across all sectors, de-duplicated by CIK, order preserved."""
+    seen, out = set(), []
+    for sector_companies in SIC_MAP.values():
+        for cik, name in sector_companies:
+            if cik not in seen:
+                seen.add(cik)
+                out.append((cik, name))
+    return out
 
 
 @st.cache_data(ttl=7200, show_spinner=False)
@@ -311,18 +322,28 @@ def fetch_comparables_edgar(
     When `year` is given, financials are pulled from that fiscal year (same-year
     comparability); companies without data for that year are excluded.
     """
-    # Get seed companies for the industry
-    seed_companies = []
+    # Seed selection. The typed name COMPOSES with the sector — this used to be an
+    # `elif`, so whenever an industry was selected the name was silently discarded:
+    # the user rephrased the search, the same six sector seeds came back every time,
+    # and nothing on screen said the name had been ignored.
     if industry and industry in SIC_MAP:
-        seed_companies = SIC_MAP[industry]
+        candidates = list(SIC_MAP[industry])
     elif company_name:
-        # Search all sectors for matching name
-        name_upper = company_name.upper()
-        for sector_companies in SIC_MAP.values():
-            for cik, name in sector_companies:
-                if name_upper in name.upper():
-                    seed_companies.append((cik, name))
+        candidates = _all_seed_companies()   # name-only search spans every sector
+    else:
+        return pd.DataFrame()                # CVM-only sector with no name to go on
 
+    seed_companies = candidates
+    if company_name:
+        name_upper = company_name.strip().upper()
+        seed_companies = [(cik, n) for cik, n in candidates if name_upper in n.upper()]
+        if not seed_companies and industry:
+            # No hit inside the chosen sector — widen to every sector before giving up.
+            seed_companies = [(cik, n) for cik, n in _all_seed_companies()
+                              if name_upper in n.upper()]
+
+    # No match anywhere means no match. Falling back to the full sector list here
+    # would be the silent-ignore bug again, only dressed up as a successful search.
     if not seed_companies:
         return pd.DataFrame()
 

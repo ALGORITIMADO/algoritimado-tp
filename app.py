@@ -760,10 +760,29 @@ if not is_commodity:
                             results_df["breakdown"] = results_df["breakdown"].apply(_to_markup_breakdown)
 
                     if results_df.empty:
-                        st.warning(
-                            "Nenhum comparável encontrado. Tente outro setor ou nome." if is_pt
-                            else "No comparables found. Try a different industry or name."
-                        )
+                        # When a name was typed, say WHY it found nothing. The name search
+                        # runs over the curated per-sector seed list (SEC) and the CVM
+                        # registry — it is not a full-text search of EDGAR, so product
+                        # words ("fasteners", "parafusos") will never match a company name.
+                        _typed = (auto_name_edgar or auto_name_cvm or "").strip()
+                        if _typed:
+                            st.warning(
+                                (f"Nenhum comparável encontrado para **“{_typed}”**. A busca por nome "
+                                 f"procura o **nome da empresa** — na lista curada por setor (SEC EDGAR) "
+                                 f"e no cadastro da CVM — não o produto que ela fabrica. "
+                                 f"Tente o nome de uma companhia listada, ou deixe o nome em branco e "
+                                 f"busque só pelo setor."
+                                 if is_pt else
+                                 f"No comparables found for **“{_typed}”**. The name search matches a "
+                                 f"**company name** — in the curated per-sector list (SEC EDGAR) and the "
+                                 f"CVM registry — not the product it makes. Try a listed company's name, "
+                                 f"or clear the name and search by industry alone.")
+                            )
+                        else:
+                            st.warning(
+                                "Nenhum comparável encontrado. Tente outro setor ou nome." if is_pt
+                                else "No comparables found. Try a different industry or name."
+                            )
                     else:
                         st.session_state["auto_results"] = results_df
                         st.session_state["auto_results_pli_label"] = pli_label_display
@@ -1157,18 +1176,33 @@ if include_tested:
         st.markdown(f'<div style="color:#6B7280;font-size:12px;margin-bottom:.3rem">{"O teste arm\'s length oficial é da margem (Art. 39 e Art. 41 da IN RFB 2.161/2023). O preço é derivação informativa." if is_pt else "Official arm\'s length test is on the margin (Art. 39 and Art. 41 of IN RFB 2.161/2023). Price is informative derivation."}</div>', unsafe_allow_html=True)
         tv_c1, tv_c2 = st.columns(2)
         with tv_c1:
+            # Starts EMPTY, not 0.0: a defaulted zero is indistinguishable from a real
+            # 0% margin, and the report would silently test the company against a
+            # number nobody entered (verdict: outside the range, adjustment needed).
             tested_value = st.number_input(
                 f"{L['tested_value']} — {pli_label_display} {('(obrigatório)' if is_pt else '(required)')}",
-                value=0.0, step=0.0001, format="%.4f", key="tv_margin")
+                value=None, step=0.0001, format="%.4f", key="tv_margin",
+                help=("Margem realizada pela parte testada no exercício. Deixe em branco "
+                      "se ainda não tem o número — o cálculo não roda sem ele."
+                      if is_pt else
+                      "Margin realized by the tested party in the fiscal year. Leave blank "
+                      "if you don't have it yet — the calculation won't run without it."))
         with tv_c2:
             tested_price = st.number_input(
                 f"{('Preço de Transação Realizada' if is_pt else 'Realized Transaction Price')} ({currency}) {('(opcional)' if is_pt else '(optional)')}",
-                value=0.0, step=0.0001, format="%.4f", key="tv_price")
+                value=None, step=0.0001, format="%.4f", key="tv_price")
     else:
         tv_c, _ = st.columns([2,2])
         with tv_c:
-            tested_value = st.number_input(f"{L['tested_value']} — {pli_label_display}",
-                                            value=0.0, step=0.0001, format="%.4f")
+            # Same as the PRL/MCL branch above: empty by default, never a silent zero.
+            tested_value = st.number_input(
+                f"{L['tested_value']} — {pli_label_display}",
+                value=None, step=0.0001, format="%.4f",
+                help=("Margem realizada pela parte testada no exercício. Deixe em branco "
+                      "se ainda não tem o número — o cálculo não roda sem ele."
+                      if is_pt else
+                      "Margin realized by the tested party in the fiscal year. Leave blank "
+                      "if you don't have it yet — the calculation won't run without it."))
 
 # ── CALCULATE ─────────────────────────────────────────────────────────────────
 st.markdown("<br>", unsafe_allow_html=True)
@@ -1223,6 +1257,21 @@ if st.button(L["calc_btn"], width="stretch"):
             st.success("✅ Cálculo concluído!" if is_pt else "✅ Calculation complete!")
     elif len(valid_comps) < 3:
         st.error("⚠️ Insira pelo menos 3 comparáveis com valores diferentes de zero (mínimo absoluto para cálculo do IQR)." if is_pt else "⚠️ Please enter at least 3 comparables with non-zero values (minimum for IQR calculation).")
+    elif include_tested and tested_value is None:
+        # Without this, an untouched field used to default to 0.0 and the report would
+        # test the company against 0% — almost always "outside the range, adjustment
+        # needed", against a number the user never typed.
+        st.error(
+            "⚠️ Informe o **valor testado** (a margem realizada pela parte testada) — "
+            "é o que será comparado ao intervalo arm's length. Se você ainda não tem "
+            "esse número, desmarque *“Incluir parte testada na análise de conformidade”* "
+            "para gerar só o intervalo dos comparáveis."
+            if is_pt else
+            "⚠️ Enter the **tested value** (the margin realized by the tested party) — "
+            "it is what gets compared to the arm's length range. If you don't have that "
+            "number yet, uncheck *“Include tested party in compliance assessment”* to "
+            "generate the comparables' range alone."
+        )
     else:
         # IN RFB 2.161/2023 recomenda preferencialmente 5+ comparáveis. Calcula com 3-4 mas avisa.
         if 3 <= len(valid_comps) < 5:

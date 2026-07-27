@@ -366,3 +366,51 @@ def test_pdf_with_commodity_pic():
         "comparables": [],
     })
     assert pdf_ok[:4] == b"%PDF" and len(pdf_ok) > 2000
+
+
+# ── Auto Search: name filter must COMPOSE with the sector ────────────────────
+# Regression guard for the 26/07/2026 lead: with a sector selected, the typed
+# company name was silently discarded (`if industry ... elif company_name`), so
+# eight different searches all returned the same six sector seeds.
+def _patch_edgar_facts(monkeypatch):
+    """Every CIK resolves to the same 2024 filing — isolates seed SELECTION."""
+    import data.edgar_fetcher as ef
+    monkeypatch.setattr(ef, "get_company_facts_v2", lambda cik: _facts())
+
+
+def test_name_filters_within_selected_industry(monkeypatch):
+    from data.edgar_fetcher import fetch_comparables_edgar
+    _patch_edgar_facts(monkeypatch)
+    df = fetch_comparables_edgar(industry="Manufacturing / Manufatura",
+                                 company_name="Illinois", year=2024)
+    assert list(df["name"]) == ["Illinois Tool Works Inc"]
+
+
+def test_industry_only_still_returns_full_seed_list(monkeypatch):
+    from data.edgar_fetcher import fetch_comparables_edgar, SIC_MAP
+    _patch_edgar_facts(monkeypatch)
+    df = fetch_comparables_edgar(industry="Manufacturing / Manufatura", year=2024)
+    assert len(df) == len(SIC_MAP["Manufacturing / Manufatura"])
+
+
+def test_unmatched_name_returns_empty_not_the_whole_sector(monkeypatch):
+    """"FASTENERS" is a product, not a company name: honest empty beats a fake hit."""
+    from data.edgar_fetcher import fetch_comparables_edgar
+    _patch_edgar_facts(monkeypatch)
+    df = fetch_comparables_edgar(industry="Manufacturing / Manufatura",
+                                 company_name="FASTENERS", year=2024)
+    assert df.empty
+
+
+def test_name_outside_chosen_sector_widens_the_search(monkeypatch):
+    from data.edgar_fetcher import fetch_comparables_edgar
+    _patch_edgar_facts(monkeypatch)
+    df = fetch_comparables_edgar(industry="Manufacturing / Manufatura",
+                                 company_name="Walmart", year=2024)
+    assert list(df["name"]) == ["Walmart Inc"]
+
+
+def test_no_industry_and_no_name_returns_empty(monkeypatch):
+    from data.edgar_fetcher import fetch_comparables_edgar
+    _patch_edgar_facts(monkeypatch)
+    assert fetch_comparables_edgar(year=2024).empty
