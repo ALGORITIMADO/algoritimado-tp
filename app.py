@@ -796,6 +796,31 @@ if not is_commodity:
                             f"✅ {len(results_df)} comparáveis encontrados!" if is_pt
                             else f"✅ {len(results_df)} comparables found!"
                         )
+                        # A typed name that matched nothing on ITS source has to be called
+                        # out even when the other source returns rows by sector. Otherwise
+                        # "2 comparáveis encontrados" reads as "your search term worked" —
+                        # which is exactly how the ignored-name bug felt from the outside.
+                        _srcs = (results_df["source"].astype(str)
+                                 if "source" in results_df.columns else pd.Series(dtype=str))
+                        _misses = []
+                        if auto_name_edgar and "SEC EDGAR" in auto_sources \
+                                and not _srcs.str.contains("SEC EDGAR").any():
+                            _misses.append(f"“{auto_name_edgar}” (SEC EDGAR)")
+                        if auto_name_cvm and "CVM Brasil" in auto_sources \
+                                and not _srcs.str.contains("CVM Brasil").any():
+                            _misses.append(f"“{auto_name_cvm}” (CVM Brasil)")
+                        if _misses:
+                            st.info(
+                                (f"ℹ️ Nenhuma empresa encontrada com o nome {' e '.join(_misses)}. "
+                                 f"Os {len(results_df)} resultados acima vieram do **setor selecionado**, "
+                                 f"não do nome digitado — a busca por nome procura o **nome da empresa**, "
+                                 f"não o produto que ela fabrica."
+                                 if is_pt else
+                                 f"ℹ️ No company found matching {' and '.join(_misses)}. "
+                                 f"The {len(results_df)} results above came from the **selected industry**, "
+                                 f"not from the name you typed — the name search matches a **company name**, "
+                                 f"not the product it makes.")
+                            )
 
         # Show results and selection
         if "auto_results" in st.session_state and not st.session_state["auto_results"].empty:
