@@ -760,6 +760,12 @@ if not is_commodity:
                             results_df["breakdown"] = results_df["breakdown"].apply(_to_markup_breakdown)
 
                     if results_df.empty:
+                        # A search that found nothing must also WIPE the previous search's
+                        # results. Without this the warning appears while the old table
+                        # stays on screen under "Resultados encontrados" — the user reads
+                        # the stale rows as the answer to the search they just ran.
+                        st.session_state.pop("auto_results", None)
+                        st.session_state.pop("auto_results_pli_label", None)
                         # When a name was typed, say WHY it found nothing. The name search
                         # runs over the curated per-sector seed list (SEC) and the CVM
                         # registry — it is not a full-text search of EDGAR, so product
