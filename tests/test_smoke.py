@@ -414,3 +414,113 @@ def test_no_industry_and_no_name_returns_empty(monkeypatch):
     from data.edgar_fetcher import fetch_comparables_edgar
     _patch_edgar_facts(monkeypatch)
     assert fetch_comparables_edgar(year=2024).empty
+
+
+# ── Annual period guard: a quarter tagged 10-K/FY is not a year ───────────────
+# GE really does carry revenue rows marked form=10-K, fp=FY covering 2024-10-01 →
+# 2024-12-31. Pairing a 3-month revenue with a 12-month operating profit inflates
+# the margin ~4x, inside a number that goes into a filed report.
+def _dpp(start, end, val, accn):
+    """Datapoint WITH an explicit period (the `_dp` helper omits `start`)."""
+    return {"form": "10-K", "fp": "FY", "start": start, "end": end,
+            "val": val, "accn": accn}
+
+
+def _facts_with_quarterly_revenue():
+    return {"facts": {"us-gaap": {
+        "Revenues": {"units": {"USD": [
+            _dpp("2024-01-01", "2024-12-31", 1000, "acc-fy"),
+            _dpp("2024-10-01", "2024-12-31", 250, "acc-q4"),   # quarter, same year
+        ]}},
+        "OperatingIncomeLoss": {"units": {"USD": [
+            _dpp("2024-01-01", "2024-12-31", 200, "acc-fy")]}},
+    }}}
+
+
+def test_quarterly_period_tagged_fy_is_not_used_as_annual():
+    fin = extract_financials(_facts_with_quarterly_revenue(), target_year=2024)
+    assert fin["revenue_usd"] == 1000             # not the 250 of Q4
+    assert fin["operating_margin"] == 20.0        # not 80.0
+
+
+def test_company_with_only_quarterly_revenue_is_excluded():
+    facts = {"facts": {"us-gaap": {
+        "Revenues": {"units": {"USD": [_dpp("2024-10-01", "2024-12-31", 250, "acc-q4")]}},
+        "OperatingIncomeLoss": {"units": {"USD": [
+            _dpp("2024-01-01", "2024-12-31", 200, "acc-fy")]}},
+    }}}
+    assert extract_financials(facts, target_year=2024) is None
+
+
+def test_52_53_week_fiscal_year_still_accepted():
+    """Retail-style 364-day years must not be mistaken for a partial period."""
+    facts = {"facts": {"us-gaap": {
+        "Revenues": {"units": {"USD": [_dpp("2023-12-31", "2024-12-29", 1000, "a")]}},
+        "OperatingIncomeLoss": {"units": {"USD": [_dpp("2023-12-31", "2024-12-29", 150, "a")]}},
+    }}}
+    fin = extract_financials(facts, target_year=2024)
+    assert fin["operating_margin"] == 15.0
+
+
+def test_datapoint_without_start_date_still_accepted():
+    """Facts arriving with no period start can't be measured — stay permissive."""
+    fin = extract_financials(_facts(), target_year=2024)   # _dp() omits `start`
+    assert fin["operating_margin"] == 20.0
+
+
+# ── Revenue selection: total, and net of assessed tax ────────────────────────
+def test_partial_revenue_tag_loses_to_the_true_total():
+    """General Mills tags `Revenues`=2.0bn beside 19.9bn of net sales (168% margin)."""
+    facts = {"facts": {"us-gaap": {
+        "Revenues": {"units": {"USD": [_dpp("2023-05-29", "2024-05-26", 2_037_800_000, "a")]}},
+        "RevenueFromContractWithCustomerExcludingAssessedTax": {"units": {"USD": [
+            _dpp("2023-05-29", "2024-05-26", 19_857_200_000, "a")]}},
+        "OperatingIncomeLoss": {"units": {"USD": [
+            _dpp("2023-05-29", "2024-05-26", 3_431_700_000, "a")]}},
+    }}}
+    fin = extract_financials(facts, target_year=2024)
+    assert fin["revenue_usd"] == 19_857_200_000
+    assert fin["operating_margin"] == 17.2819
+
+
+def test_gross_revenue_never_beats_net_revenue():
+    """Cronos: 161.8M gross (with excise) vs 117.6M net. TP wants the net one —
+    so the bigger-wins rule must not drag the denominator up to gross."""
+    facts = {"facts": {"us-gaap": {
+        "RevenueFromContractWithCustomerExcludingAssessedTax": {"units": {"USD": [
+            _dpp("2024-01-01", "2024-12-31", 117_615_000, "a")]}},
+        "RevenueFromContractWithCustomerIncludingAssessedTax": {"units": {"USD": [
+            _dpp("2024-01-01", "2024-12-31", 161_821_000, "a")]}},
+        "OperatingIncomeLoss": {"units": {"USD": [
+            _dpp("2024-01-01", "2024-12-31", -76_500_000, "a")]}},
+    }}}
+    fin = extract_financials(facts, target_year=2024)
+    assert fin["revenue_usd"] == 117_615_000
+
+
+def test_gross_revenue_used_when_net_is_absent():
+    """No Excluding tag for the period → the gross figure is all there is."""
+    facts = {"facts": {"us-gaap": {
+        "RevenueFromContractWithCustomerIncludingAssessedTax": {"units": {"USD": [
+            _dpp("2024-01-01", "2024-12-31", 161_821_000, "a")]}},
+        "OperatingIncomeLoss": {"units": {"USD": [
+            _dpp("2024-01-01", "2024-12-31", 16_182_100, "a")]}},
+    }}}
+    fin = extract_financials(facts, target_year=2024)
+    assert fin["revenue_usd"] == 161_821_000
+    assert fin["operating_margin"] == 10.0
+
+
+def test_lease_heavy_reit_keeps_total_revenue():
+    """REIT: rent isn't ASC 606 contract revenue, so `Revenues` is the real total.
+    Preferring the contract tag here produced margins above 1000%."""
+    facts = {"facts": {"us-gaap": {
+        "Revenues": {"units": {"USD": [_dpp("2024-01-01", "2024-12-31", 3_000_000, "a")]}},
+        "RevenueFromContractWithCustomerExcludingAssessedTax": {"units": {"USD": [
+            _dpp("2024-01-01", "2024-12-31", 100_000, "a")]}},
+        "OperatingIncomeLoss": {"units": {"USD": [
+            _dpp("2024-01-01", "2024-12-31", 1_200_000, "a")]}},
+    }}}
+    fin = extract_financials(facts, target_year=2024)
+    assert fin["revenue_usd"] == 3_000_000
+    assert fin["operating_margin"] == 40.0

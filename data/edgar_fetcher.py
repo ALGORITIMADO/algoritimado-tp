@@ -2,6 +2,7 @@ import requests
 import pandas as pd
 import streamlit as st
 import time
+from datetime import date
 from typing import Optional, List, Dict, Tuple
 
 HEADERS = {"User-Agent": "Algoritimado research@algoritimado.com"}
@@ -160,6 +161,29 @@ def get_company_facts_v2(cik: int) -> Optional[Dict]:
         return None
 
 
+def _is_annual_period(u: Dict) -> bool:
+    """True when the datapoint actually covers a full year (~365 days).
+
+    `form="10-K"` + `fp="FY"` does NOT guarantee an annual period: companies do tag
+    QUARTERLY figures that way. General Electric, for instance, carries revenue rows
+    marked 10-K/FY running 2024-10-01 → 2024-12-31. Dividing a full-year operating
+    profit by a three-month revenue inflates the margin roughly fourfold — silently,
+    inside a number that ends up in a filed transfer pricing report.
+
+    Datapoints without a start date can't be measured, so they are accepted: that is
+    how plenty of legitimate facts arrive, and rejecting them would drop real data.
+    52/53-week fiscal years land at 364/371 days, hence the tolerance band.
+    """
+    start, end = u.get("start"), u.get("end")
+    if not start or not end:
+        return True
+    try:
+        days = (date.fromisoformat(str(end)) - date.fromisoformat(str(start))).days
+    except (ValueError, TypeError):
+        return True
+    return 300 <= days <= 400
+
+
 def _latest_annual_record(gaap: Dict, fields: List[str], target_year: Optional[int] = None):
     """Annual 10-K/20-F datapoint across ALL listed fields.
 
@@ -175,8 +199,18 @@ def _latest_annual_record(gaap: Dict, fields: List[str], target_year: Optional[i
     When `target_year` is None, returns the value with the latest end_date —
     companies that migrated to ASC 606 fields often leave legacy fields frozen at
     2020 data, so iterating field-by-field would return stale values.
+
+    Among candidates sharing that same period end, the LARGEST value wins: when a
+    company tags both a partial figure and the true total under different fields,
+    the total is the larger one (General Mills tags `Revenues` = US$ 2.0bn beside
+    a real US$ 19.9bn of net sales; picking the first field yielded a 168% margin).
+    The one exception is `...IncludingAssessedTax`, which is revenue GROSSED UP by
+    sales/excise tax: whenever the `...ExcludingAssessedTax` (net) figure exists for
+    the same period, the gross one is discarded rather than preferred for being
+    bigger. That is what keeps cannabis comparables — where excise duty is a large
+    slice of gross revenue — on the net-revenue denominator TP analysis expects.
     """
-    best = None  # (end, value, accn)
+    candidates = []  # (end, value, accn, field)
     for field in fields:
         if field not in gaap:
             continue
@@ -185,22 +219,29 @@ def _latest_annual_record(gaap: Dict, fields: List[str], target_year: Optional[i
                   if u.get("form") in ("10-K", "20-F") and u.get("fp") == "FY"]
         if not annual:
             annual = [u for u in usd_vals if u.get("form") in ("10-K", "20-F")]
-        if not annual:
-            continue
-        annual.sort(key=lambda x: x.get("end", ""), reverse=True)
         for u in annual:
             val = u.get("val")
             end = u.get("end", "")
             if val is None or val == 0:
                 continue
-            # Honor the requested fiscal year: skip non-matching years and keep
-            # scanning older datapoints until the right year is found.
+            # A quarter tagged as FY is not a year — see _is_annual_period.
+            if not _is_annual_period(u):
+                continue
+            # Honor the requested fiscal year — comparability forbids mixing years.
             if target_year is not None and not str(end).startswith(str(target_year)):
                 continue
-            if best is None or end > best[0]:
-                best = (end, float(val), u.get("accn", ""))
-            break
-    return (best[1], best[2], best[0]) if best else None
+            candidates.append((end, float(val), u.get("accn", ""), field))
+
+    if not candidates:
+        return None
+
+    latest_end = max(c[0] for c in candidates)
+    same_period = [c for c in candidates if c[0] == latest_end]
+    if any(c[3].endswith("ExcludingAssessedTax") for c in same_period):
+        same_period = [c for c in same_period
+                       if not c[3].endswith("IncludingAssessedTax")]
+    end, value, accn, _ = max(same_period, key=lambda c: c[1])
+    return (value, accn, end)
 
 
 def _latest_annual(gaap: Dict, fields: List[str], target_year: Optional[int] = None) -> Optional[float]:
