@@ -2,6 +2,7 @@ import requests
 import pandas as pd
 import streamlit as st
 import io
+import unicodedata
 import zipfile
 from typing import Optional, List
 
@@ -32,17 +33,36 @@ CNAE_MAP = {
     "Logistics / Logística":          ["LOGIST", "TRANSPORT", "ARMAZ", "CARGA"],
 }
 
-# DRE account codes (CVM standard)
-# 3.01 = Net Revenue
-# 3.05 = Gross Profit (Resultado Bruto)
-# 3.07 = EBIT (Resultado antes do financeiro)
-# 3.11 = Net Income (Resultado Líquido)
+# DRE account codes (CVM standard). Verified 28/07/2026 against the filed DFP of
+# Blau Farmacêutica (CD_CVM 24627, FY2024) and cross-checked across all 467
+# companies in dfp_cia_aberta_DRE_con_2024:
+#
+#   3.01  Receita de Venda de Bens e/ou Serviços                    → revenue
+#   3.02  Custo dos Bens e/ou Serviços Vendidos
+#   3.03  Resultado Bruto                                           → gross profit
+#   3.04  Despesas/Receitas Operacionais
+#   3.05  Resultado Antes do Resultado Financeiro e dos Tributos    → EBIT
+#   3.06  Resultado Financeiro
+#   3.07  Resultado Antes dos Tributos sobre o Lucro                → EBT, NOT EBIT
+#   3.11  Lucro/Prejuízo Consolidado do Período                     → net income
+#
+# This map used to read 3.05 as gross profit and 3.07 as EBIT — off by one rung of
+# the ladder, so every Brazilian comparable reported its OPERATING margin as gross
+# and its PRE-TAX margin as operating (median error 17.5 p.p. and 8.6 p.p.).
+#
+# Banks and insurers shift the ladder (their 3.05 is already "antes dos tributos"),
+# so each code also carries the label it must match: the code alone is not enough.
 ACCOUNT_MAP = {
-    "3.01": "revenue",
-    "3.05": "gross_profit",
-    "3.07": "ebit",
-    "3.11": "net_income",
+    "3.01": ("revenue", None),
+    "3.03": ("gross_profit", "RESULTADO BRUTO"),
+    "3.05": ("ebit", "ANTES DO RESULTADO FINANCEIRO"),
+    "3.11": ("net_income", None),
 }
+
+
+def _norm_label(s) -> str:
+    """Upper-case, accent-stripped account label for robust matching."""
+    return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode().upper()
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
@@ -104,15 +124,33 @@ def get_cvm_doc_links(year: int = 2024) -> dict:
         return {}
 
 
+def _only_active_companies(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop cancelled/suspended registrations and duplicate rows per company.
+
+    The CVM registry lists every company that EVER registered: 1,912 of its 2,677
+    rows are CANCELADA. Keeping them poisons the candidate pool — the search takes
+    the first N keyword matches, and in "Manufatura" 220 of the 259 matches are
+    long-dead registrations with no DFP to fetch. That is why a sector as broad as
+    manufacturing was coming back with two comparables instead of fifteen.
+    """
+    if df is None or df.empty:
+        return df
+    if "SIT" in df.columns:
+        df = df[df["SIT"].astype(str).str.strip().str.upper() == "ATIVO"]
+    if "CD_CVM" in df.columns:
+        df = df.drop_duplicates(subset=["CD_CVM"], keep="last")
+    return df.reset_index(drop=True)
+
+
 @st.cache_data(ttl=86400, show_spinner=False)
 def get_cvm_company_list(year: int = 2023) -> Optional[pd.DataFrame]:
-    """Get list of CVM registered companies with sector info."""
+    """Get list of CVM registered companies (active only) with sector info."""
     url = f"https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv"
     try:
         resp = requests.get(url, timeout=30)
         df = pd.read_csv(io.StringIO(resp.content.decode("latin-1")),
                          sep=";", low_memory=False)
-        return df
+        return _only_active_companies(df)
     except Exception:
         return None
 
@@ -219,13 +257,27 @@ def calculate_margins_cvm(
             if "MIL" in str(company_dre[esc_col].iloc[0]).upper():
                 scale = 1000.0
 
+        desc_col = next((c for c in company_dre.columns if "DS_CONTA" in c.upper()), None)
+        codes = company_dre[acc_col].astype(str).str.strip()
+
         values = {}
-        for acc_code, acc_name in ACCOUNT_MAP.items():
-            row = company_dre[company_dre[acc_col].astype(str).str.startswith(acc_code)]
-            if not row.empty:
-                val = pd.to_numeric(row[val_col].iloc[0], errors="coerce")
-                if pd.notna(val):
-                    values[acc_name] = float(val) * scale
+        for acc_code, (acc_name, required_label) in ACCOUNT_MAP.items():
+            # Exact code match, never startswith: "3.01" also prefixes "3.01.01"
+            # (sub-accounts), and the first sub-account is not the total.
+            rows = company_dre[codes == acc_code]
+            if rows.empty:
+                continue
+            # Confirm the code means what we think it means. Financial institutions
+            # publish a different DRE ladder under the same codes — matching the
+            # label keeps a bank's pre-tax result from being served as EBIT.
+            if required_label and desc_col:
+                rows = rows[rows[desc_col].map(
+                    lambda s: required_label in _norm_label(s))]
+                if rows.empty:
+                    continue
+            val = pd.to_numeric(rows[val_col].iloc[0], errors="coerce")
+            if pd.notna(val):
+                values[acc_name] = float(val) * scale
 
         if "revenue" not in values or values["revenue"] == 0:
             return None
@@ -249,8 +301,8 @@ def calculate_margins_cvm(
 
 
 def _pli_breakdown_cvm(m: dict, pli: str) -> Optional[dict]:
-    """'Show the math' breakdown for a CVM comparable (BRL). DRE 3.07 (EBIT) maps
-    to operating, 3.11 net income, 3.05 gross profit. CVM has no D&A split → no EBITDA."""
+    """'Show the math' breakdown for a CVM comparable (BRL). DRE 3.05 (EBIT) maps
+    to operating, 3.11 net income, 3.03 gross profit. CVM has no D&A split → no EBITDA."""
     rev = m.get("revenue_brl")
     if not rev:
         return None

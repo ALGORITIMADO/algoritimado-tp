@@ -10,7 +10,8 @@ from calculations.base import calculate_iqr
 from calculations.country_risk import adjust_comparable_margin
 from calculations.commodities import calculate_pic_commodity
 from data.edgar_fetcher import extract_financials, _pli_breakdown
-from data.cvm_fetcher import calculate_margins_cvm, _pli_breakdown_cvm
+from data.cvm_fetcher import (calculate_margins_cvm, _pli_breakdown_cvm,
+                              _only_active_companies)
 from reports.pdf_generator import generate_report, _breakdown_text, _cr_adjustment_text
 
 
@@ -78,7 +79,10 @@ def test_cvm_scale_mil():
         "CD_CVM": ["1", "1", "1"],
         "DT_FIM_EXERC": ["2024-12-31"] * 3,
         "ESCALA_MOEDA": ["MIL"] * 3,
-        "CD_CONTA": ["3.01", "3.07", "3.11"],
+        "CD_CONTA": ["3.01", "3.05", "3.11"],
+        "DS_CONTA": ["Receita de Venda de Bens e/ou Serviços",
+                     "Resultado Antes do Resultado Financeiro e dos Tributos",
+                     "Lucro/Prejuízo Consolidado do Período"],
         "VL_CONTA": [1000, 200, 100],
     })
     m = calculate_margins_cvm(df, "1", "CD_CVM")
@@ -99,7 +103,9 @@ def test_cvm_picks_current_exercise_not_comparative():
         "DT_FIM_EXERC": ["2024-12-31", "2024-12-31", "2025-12-31", "2025-12-31"],
         "ORDEM_EXERC": ["PENÚLTIMO", "PENÚLTIMO", "ÚLTIMO", "ÚLTIMO"],
         "ESCALA_MOEDA": ["MIL"] * 4,
-        "CD_CONTA": ["3.01", "3.07", "3.01", "3.07"],
+        "CD_CONTA": ["3.01", "3.05", "3.01", "3.05"],
+        "DS_CONTA": ["Receita de Venda de Bens e/ou Serviços",
+                     "Resultado Antes do Resultado Financeiro e dos Tributos"] * 2,
         "VL_CONTA": [44000, 9000, 40000, 8000],  # prior comes first in the file
     })
     m = calculate_margins_cvm(df, "1", "CD_CVM")
@@ -524,3 +530,111 @@ def test_lease_heavy_reit_keeps_total_revenue():
     fin = extract_financials(facts, target_year=2024)
     assert fin["revenue_usd"] == 3_000_000
     assert fin["operating_margin"] == 40.0
+
+
+# ── CVM account ladder (3.03 bruto / 3.05 EBIT / 3.07 EBT) ───────────────────
+def _blau_dre():
+    """Blau Farmacêutica FY2024, exactly as filed (CD_CVM 24627, valores em MIL).
+
+    Conferido contra a DFP protocolada — a mesma fixture usada na PoC do motor CVM.
+    """
+    linhas = [
+        ("3.01", "Receita de Venda de Bens e/ou Serviços", 1_754_376),
+        ("3.02", "Custo dos Bens e/ou Serviços Vendidos", -1_095_626),
+        ("3.03", "Resultado Bruto", 658_750),
+        ("3.04", "Despesas/Receitas Operacionais", -329_953),
+        ("3.05", "Resultado Antes do Resultado Financeiro e dos Tributos", 328_797),
+        ("3.06", "Resultado Financeiro", -36_908),
+        ("3.07", "Resultado Antes dos Tributos sobre o Lucro", 291_889),
+        ("3.11", "Lucro/Prejuízo Consolidado do Período", 213_525),
+    ]
+    return pd.DataFrame({
+        "CD_CVM": ["24627"] * len(linhas),
+        "DT_FIM_EXERC": ["2024-12-31"] * len(linhas),
+        "ESCALA_MOEDA": ["MIL"] * len(linhas),
+        "CD_CONTA": [l[0] for l in linhas],
+        "DS_CONTA": [l[1] for l in linhas],
+        "VL_CONTA": [l[2] for l in linhas],
+    })
+
+
+def test_cvm_margins_match_the_filed_statement():
+    m = calculate_margins_cvm(_blau_dre(), "24627", "CD_CVM")
+    assert m["gross_margin"] == 37.549         # 658.750 / 1.754.376 — era 18.74 (EBIT)
+    assert m["operating_margin"] == 18.7415    # 328.797 / 1.754.376 — era 16.64 (EBT)
+    assert m["net_margin"] == 12.171          # 213.525 / 1.754.376
+    assert m["gross_profit_brl"] == 658_750_000
+    assert m["ebit_brl"] == 328_797_000
+
+
+def test_cvm_never_reads_pre_tax_result_as_operating():
+    """3.07 (Resultado Antes dos Tributos) must never feed the operating margin."""
+    m = calculate_margins_cvm(_blau_dre(), "24627", "CD_CVM")
+    assert m["ebit_brl"] != 291_889_000        # o EBT não pode virar EBIT
+
+
+def test_cvm_bank_ladder_does_not_masquerade_as_ebit():
+    """Bancos publicam outra escada sob os mesmos códigos: o 3.05 deles já é o
+    resultado ANTES DOS TRIBUTOS. Sem margem operacional é melhor que uma errada."""
+    linhas = [
+        ("3.01", "Receitas da Intermediação Financeira", 10_000),
+        ("3.03", "Resultado Bruto Intermediação Financeira", 4_000),
+        ("3.05", "Resultado Antes dos Tributos sobre o Lucro", 2_500),
+        ("3.11", "Lucro ou Prejuízo Líquido Consolidado do Período", 1_800),
+    ]
+    df = pd.DataFrame({
+        "CD_CVM": ["9999"] * len(linhas),
+        "DT_FIM_EXERC": ["2024-12-31"] * len(linhas),
+        "ESCALA_MOEDA": ["MIL"] * len(linhas),
+        "CD_CONTA": [l[0] for l in linhas],
+        "DS_CONTA": [l[1] for l in linhas],
+        "VL_CONTA": [l[2] for l in linhas],
+    })
+    m = calculate_margins_cvm(df, "9999", "CD_CVM")
+    assert "operating_margin" not in m         # rótulo não bate → não inventa EBIT
+    assert m["gross_margin"] == 40.0
+    assert m["net_margin"] == 18.0
+
+
+def test_cvm_subaccount_never_replaces_the_total():
+    """"3.01" também é prefixo de "3.01.01": só o código exato vale."""
+    linhas = [
+        ("3.01.01", "Venda de Mercadorias (segmento)", 300),
+        ("3.01", "Receita de Venda de Bens e/ou Serviços", 1_000),
+        ("3.05", "Resultado Antes do Resultado Financeiro e dos Tributos", 200),
+    ]
+    df = pd.DataFrame({
+        "CD_CVM": ["1"] * len(linhas),
+        "DT_FIM_EXERC": ["2024-12-31"] * len(linhas),
+        "ESCALA_MOEDA": ["MIL"] * len(linhas),
+        "CD_CONTA": [l[0] for l in linhas],
+        "DS_CONTA": [l[1] for l in linhas],
+        "VL_CONTA": [l[2] for l in linhas],
+    })
+    m = calculate_margins_cvm(df, "1", "CD_CVM")
+    assert m["revenue_brl"] == 1_000_000       # não os 300 da sub-conta
+    assert m["operating_margin"] == 20.0
+
+
+# ── Cadastro CVM: só empresa viva entra no pool de candidatos ─────────────────
+def test_cancelled_registrations_are_dropped():
+    """1.912 das 2.677 linhas do cadastro são CANCELADA; em Manufatura, 220 de 259.
+    Elas consumiam o orçamento de candidatos e o setor voltava com 2 comparáveis."""
+    cad = pd.DataFrame({
+        "CD_CVM": [1, 2, 3, 4],
+        "DENOM_SOCIAL": ["VIVA SA", "MORTA SA", "SUSPENSA SA", "VIVA2 SA"],
+        "SIT": ["ATIVO", "CANCELADA", "SUSPENSO(A) - DECISÃO ADM", "ativo "],
+    })
+    out = _only_active_companies(cad)
+    assert list(out["CD_CVM"]) == [1, 4]        # inclui o "ativo " com espaço/caixa
+
+
+def test_duplicate_registry_rows_collapse_to_one():
+    cad = pd.DataFrame({
+        "CD_CVM": [7, 7, 8],
+        "DENOM_SOCIAL": ["X SA", "X SA (novo registro)", "Y SA"],
+        "SIT": ["ATIVO"] * 3,
+    })
+    out = _only_active_companies(cad)
+    assert len(out) == 2
+    assert out[out["CD_CVM"] == 7]["DENOM_SOCIAL"].iloc[0] == "X SA (novo registro)"
