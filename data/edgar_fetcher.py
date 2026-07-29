@@ -12,43 +12,61 @@ EDGAR_BASE = "https://data.sec.gov"
 # Audited 2026-05-16 against SEC EDGAR company_tickers.json — all CIKs verified.
 # Removed: Alexion (acquired by AstraZeneca 2021), Pioneer Natural Resources (acquired
 # by ExxonMobil 2024), Kellogg (Kellanova acquired by Mars 2025).
+#
+# RE-AUDITED 2026-07-28 — a seed only earns its seat if it DELIVERS the comparable.
+# Testing all 146 entries against live XBRL found 36 that returned no operating
+# margin for either 2024 or 2025. They were not dormant companies: Pfizer, J&J,
+# Exxon and JPMorgan are very much operating — they simply publish no annual
+# operating-income subtotal in XBRL (Pfizer has no such tag at all; Public Storage
+# tags it only in 10-Qs; a bank has no operating result by construction). Deriving
+# one from "revenue minus total costs" was rejected: for Exxon that expression is
+# income BEFORE TAXES, and shipping a pre-tax figure labelled operating is exactly
+# the defect just fixed on the CVM side.
+# So the 36 seats were replaced by companies verified to return an operating margin
+# for BOTH 2024 and 2025. Every CIK below was resolved from company_tickers.json and
+# exercised against live data on 2026-07-28.
 SIC_MAP = {
     "Pharmaceutical / Farmacêutico": [
-        (78003, "Pfizer Inc"), (310158, "Merck & Co Inc"), (200406, "Johnson & Johnson"),
-        (1551152, "AbbVie Inc"), (14272, "Bristol Myers Squibb Co"),
-        (59478, "Eli Lilly and Co"), (882095, "Gilead Sciences Inc"),
-        (318154, "Amgen Inc"), (875045, "Biogen Inc"), (1682852, "Moderna Inc"),
+        (1551152, "AbbVie Inc"), (882095, "Gilead Sciences Inc"),
+        (318154, "Amgen Inc"), (1682852, "Moderna Inc"),
         (1800, "Abbott Laboratories"), (10456, "Baxter International Inc"),
+        (1792044, "Viatris Inc"), (1232524, "Jazz Pharmaceuticals plc"),
+        (1585364, "Perrigo Co plc"),
     ],
     "Biotech / Biotecnologia": [
-        (318154, "Amgen Inc"), (882095, "Gilead Sciences Inc"), (875045, "Biogen Inc"),
+        (318154, "Amgen Inc"), (882095, "Gilead Sciences Inc"),
         (1682852, "Moderna Inc"), (872589, "Regeneron Pharmaceuticals Inc"),
         (875320, "Vertex Pharmaceuticals Inc"),
         (1110803, "Illumina Inc"), (1048477, "BioMarin Pharmaceutical Inc"),
+        (879169, "Incyte Corp"), (1082554, "United Therapeutics Corp"),
+        (914475, "Neurocrine Biosciences Inc"),
     ],
     "Cannabis / Cannabis Medicinal": [
         (1731348, "Tilray Brands Inc"), (1795139, "Green Thumb Industries Inc"),
         (1754195, "Trulieve Cannabis Corp"), (1848416, "Verano Holdings Corp"),
-        (1584549, "Village Farms International Inc"),
-        (1813452, "Planet 13 Holdings Inc"), (1522767, "MariMed Inc"),
+        (1522767, "MariMed Inc"),
         (1779474, "WM Technology Inc"), (1656472, "Cronos Group Inc"),
+        (1677576, "Innovative Industrial Properties Inc"),
+        (825542, "Scotts Miracle-Gro Co"),
     ],
     "Agriculture / Agronegócio": [
-        (7084, "Archer-Daniels-Midland Co"), (1996862, "Bunge Global SA"),
-        (1755672, "Corteva Inc"), (100493, "Tyson Foods Inc"),
+        (100493, "Tyson Foods Inc"),
         (315189, "Deere & Co"), (1324404, "CF Industries Holdings Inc"),
         (37785, "FMC Corp"), (1285785, "Mosaic Co"),
+        (880266, "AGCO Corp"), (836157, "Lindsay Corp"),
     ],
     "AgTech / Tecnologia Agrícola": [
         (315189, "Deere & Co"), (37785, "FMC Corp"),
-        (1755672, "Corteva Inc"), (1285785, "Mosaic Co"),
-        (1324404, "CF Industries Holdings Inc"),
+        (1285785, "Mosaic Co"), (1324404, "CF Industries Holdings Inc"),
+        (880266, "AGCO Corp"), (836157, "Lindsay Corp"),
+        (737758, "Toro Co"), (102729, "Valmont Industries Inc"),
     ],
     "Food & Beverage / Alimentos": [
         (21344, "Coca-Cola Co"), (77476, "PepsiCo Inc"),
         (16732, "Campbell's Co"), (40704, "General Mills Inc"),
-        (1996862, "Bunge Global SA"),
         (100493, "Tyson Foods Inc"), (1637459, "Kraft Heinz Co"),
+        (1103982, "Mondelez International Inc"), (63754, "McCormick & Co Inc"),
+        (48465, "Hormel Foods Corp"),
     ],
     "Cosmetics / Cosméticos": [
         (1001250, "Estée Lauder Companies Inc"), (1024305, "Coty Inc"),
@@ -56,15 +74,17 @@ SIC_MAP = {
         (1021561, "Nu Skin Enterprises Inc"), (1096752, "Edgewell Personal Care Co"),
     ],
     "Chemicals / Química": [
-        (1751788, "Dow Inc"), (1666700, "DuPont de Nemours Inc"),
         (37785, "FMC Corp"), (1285785, "Mosaic Co"),
         (1489393, "LyondellBasell Industries NV"), (1306830, "Celanese Corp"),
-        (915389, "Eastman Chemical Co"),
+        (1707925, "Linde plc"), (2969, "Air Products & Chemicals Inc"),
+        (915913, "Albemarle Corp"),
     ],
     "Oil & Gas / Petróleo e Gás": [
-        (34088, "Exxon Mobil Corp"), (93410, "Chevron Corp"),
-        (1163165, "ConocoPhillips"), (1539838, "Diamondback Energy Inc"),
-        (1534701, "Phillips 66"),
+        (1539838, "Diamondback Energy Inc"),
+        (1510295, "Marathon Petroleum Corp"), (1035002, "Valero Energy Corp"),
+        (45012, "Halliburton Co"), (1506307, "Kinder Morgan Inc"),
+        (107263, "Williams Companies Inc"), (1039684, "ONEOK Inc"),
+        (1389170, "Targa Resources Corp"),
     ],
     "Software / Tecnologia": [
         (789019, "Microsoft Corp"), (1108524, "Salesforce Inc"),
@@ -89,15 +109,25 @@ SIC_MAP = {
         (1562088, "Duolingo Inc"), (912766, "Laureate Education Inc"),
         (104889, "Graham Holdings Co"),
     ],
+    # Banks were removed on purpose: a bank's income statement has no operating
+    # result — net interest income is the business itself, not an operating
+    # subtotal — so JPMorgan, BofA, Goldman, Morgan Stanley, Wells Fargo and Citi
+    # could never answer an operating-margin search. Payments, exchanges, ratings
+    # and asset management do publish one, and are the closer comparables for the
+    # intercompany service transactions this tool actually gets used for.
     "Financial Services / Financeiro": [
-        (19617, "JPMorgan Chase & Co"), (70858, "Bank of America Corp"),
-        (886982, "Goldman Sachs Group Inc"), (895421, "Morgan Stanley"),
-        (72971, "Wells Fargo & Co"), (831001, "Citigroup Inc"),
+        (1403161, "Visa Inc"), (1141391, "Mastercard Inc"),
+        (64040, "S&P Global Inc"), (1571949, "Intercontinental Exchange Inc"),
+        (1059556, "Moody's Corp"), (1156375, "CME Group Inc"),
+        (1120193, "Nasdaq Inc"), (2012383, "BlackRock Inc"),
     ],
+    # Fastenal and Timken earn their seats: fasteners and bearings are as close as
+    # a listed US comparable gets to a Brazilian metalúrgica.
     "Manufacturing / Manufatura": [
-        (32604, "Emerson Electric Co"), (773840, "Honeywell International Inc"),
-        (40545, "General Electric Co"), (49826, "Illinois Tool Works Inc"),
+        (773840, "Honeywell International Inc"), (49826, "Illinois Tool Works Inc"),
         (76334, "Parker-Hannifin Corp"), (1024478, "Rockwell Automation Inc"),
+        (815556, "Fastenal Co"), (98362, "Timken Co"),
+        (59527, "Lincoln Electric Holdings Inc"), (29905, "Dover Corp"),
     ],
     "Retail / Varejo": [
         (104169, "Walmart Inc"), (1018724, "Amazon.com Inc"),
@@ -106,9 +136,10 @@ SIC_MAP = {
     ],
     "Real Estate / Imobiliário": [
         (1045609, "Prologis Inc"), (1101239, "Equinix Inc"),
-        (1393311, "Public Storage"), (726728, "Realty Income Corp"),
-        (1063761, "Simon Property Group Inc"), (766704, "Welltower Inc"),
+        (1063761, "Simon Property Group Inc"),
         (1289490, "Extra Space Storage Inc"),
+        (1138118, "CBRE Group Inc"), (1037976, "Jones Lang LaSalle Inc"),
+        (1297996, "Digital Realty Trust Inc"), (1020569, "Iron Mountain Inc"),
     ],
     "Sanitation / Saneamento": [
         (1410636, "American Water Works Co Inc"), (78128, "Essential Utilities Inc"),
@@ -121,9 +152,9 @@ SIC_MAP = {
         (1109357, "Exelon Corp"), (4904, "American Electric Power Co Inc"),
     ],
     "Mining / Mineração": [
-        (831259, "Freeport-McMoRan Inc"), (1164727, "Newmont Corp"),
-        (73309, "Nucor Corp"), (756894, "Barrick Mining Corp"),
-        (1675149, "Alcoa Corp"),
+        (831259, "Freeport-McMoRan Inc"), (1022671, "Steel Dynamics Inc"),
+        (1001838, "Southern Copper Corp"), (861884, "Reliance Inc"),
+        (764065, "Cleveland-Cliffs Inc"),
     ],
     "Logistics / Logística": [
         (1048911, "FedEx Corp"), (1090727, "United Parcel Service Inc"),

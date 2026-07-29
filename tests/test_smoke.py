@@ -687,3 +687,44 @@ def test_report_documents_why_brazilian_comparables_were_excluded():
         ],
     })
     assert pdf[:4] == b"%PDF" and len(pdf) > 2000
+
+
+# ── Seed list: assento só vale se entrega o comparável ───────────────────────
+# CIKs auditados em 28/07/2026 contra o XBRL vivo: nenhum devolve margem
+# operacional em 2024 nem 2025. Empresas vivas, mas sem subtotal de resultado
+# operacional publicado (Pfizer não tem a tag; Public Storage só etiqueta em
+# 10-Q; banco não tem resultado operacional por construção). Este teste impede
+# que voltem para a lista sem alguém checar de novo — em CI, offline.
+CIKS_SEM_MARGEM_OPERACIONAL = {
+    78003, 310158, 200406, 14272, 59478, 875045,          # pharma
+    1584549, 1813452,                                      # cannabis
+    7084, 1996862, 1755672,                                # agro
+    1751788, 1666700, 915389,                              # química
+    34088, 93410, 1163165, 1534701,                        # óleo e gás
+    19617, 70858, 886982, 895421, 72971, 831001,           # bancos
+    32604, 40545,                                          # manufatura
+    1393311, 726728, 766704,                               # imobiliário
+    1164727, 73309, 756894, 1675149,                       # mineração
+}
+
+
+def test_seed_list_has_no_known_dead_seats():
+    from data.edgar_fetcher import SIC_MAP
+    presentes = {cik for seeds in SIC_MAP.values() for cik, _ in seeds}
+    intrusos = presentes & CIKS_SEM_MARGEM_OPERACIONAL
+    assert not intrusos, f"CIKs que não entregam margem operacional: {sorted(intrusos)}"
+
+
+def test_no_duplicate_company_inside_a_sector():
+    from data.edgar_fetcher import SIC_MAP
+    for setor, seeds in SIC_MAP.items():
+        ciks = [cik for cik, _ in seeds]
+        assert len(ciks) == len(set(ciks)), f"CIK repetido em {setor}"
+
+
+def test_every_sector_has_enough_seeds_for_an_iqr():
+    """calculate_iqr exige no mínimo 3 comparáveis; setor com menos que isso na
+    origem nunca produziria um intervalo."""
+    from data.edgar_fetcher import SIC_MAP
+    magros = {s: len(v) for s, v in SIC_MAP.items() if len(v) < 5}
+    assert not magros, f"setores abaixo de 5 seeds: {magros}"
