@@ -122,8 +122,11 @@ def extraction_allowed(email: str) -> bool:
         item = entrada.strip().lower()
         if not item:
             continue
-        if item.startswith("@"):
-            if dominio == item[1:]:
+        # Entrada com "@" no meio é e-mail; sem "@" é domínio (com ou sem o "@"
+        # na frente). Aceitar as duas grafias evita a pegadinha silenciosa de
+        # escrever "algoritimado.com" e a lista simplesmente não liberar ninguém.
+        if "@" not in item.strip("@"):
+            if dominio == item.lstrip("@"):
                 return True
         elif item == alvo:
             return True
@@ -315,6 +318,44 @@ def citation_text(extracted: dict, pli: str = "operating_margin", lang: str = "p
 
 
 # ── orquestração ─────────────────────────────────────────────────────────────
+class _ExtractionError(Exception):
+    """Falha nomeada do pipeline. Levantar (em vez de retornar) é deliberado:
+    o cache do Streamlit guarda retorno e NÃO guarda exceção, então sucesso é
+    reaproveitado por 24h e falha transitória é tentada de novo."""
+
+    def __init__(self, codigo: str, detalhe: str = ""):
+        super().__init__(codigo)
+        self.codigo, self.detalhe = codigo, detalhe
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _extract_cached(link_doc: str) -> dict:
+    """Extração de um documento, cacheada 24h **pelo link apenas**.
+
+    A chave não inclui o e-mail de propósito: dois usuários que pedem a mesma
+    empresa no mesmo dia devem custar uma rodada, não duas. A autorização é
+    checada antes, em `extract_from_link`.
+    """
+    pdf = download_dfp_pdf(link_doc)
+    if not pdf:
+        raise _ExtractionError("pdf_indisponivel")
+    try:
+        doc, n_pages = page_numbered_text(pdf)
+    except Exception:
+        raise _ExtractionError("pdf_ilegivel")
+    if len(doc.strip()) < 500:
+        # PDF de imagem escaneada, sem camada de texto — pypdf não resolve.
+        raise _ExtractionError("pdf_sem_texto")
+    try:
+        raw, usage = call_bedrock(build_prompt(doc))
+    except Exception as e:
+        raise _ExtractionError("bedrock_falhou", str(e)[:300])
+    data = normalize_extraction(parse_extraction(raw) or {})
+    if not data:
+        raise _ExtractionError("resposta_invalida")
+    return {"ok": True, "dados": data, "paginas": n_pages, "usage": usage}
+
+
 def extract_from_link(link_doc: str, email: Optional[str] = None) -> dict:
     """Pipeline completo. Devolve sempre um dict com 'ok' — nunca levanta.
 
@@ -325,21 +366,10 @@ def extract_from_link(link_doc: str, email: Optional[str] = None) -> dict:
         return {"ok": False, "erro": "credencial_ausente"}
     if email is not None and not extraction_allowed(email):
         return {"ok": False, "erro": "nao_autorizado"}
-    pdf = download_dfp_pdf(link_doc)
-    if not pdf:
-        return {"ok": False, "erro": "pdf_indisponivel"}
     try:
-        doc, n_pages = page_numbered_text(pdf)
-    except Exception:
-        return {"ok": False, "erro": "pdf_ilegivel"}
-    if len(doc.strip()) < 500:
-        # PDF de imagem escaneada, sem camada de texto — pypdf não resolve.
-        return {"ok": False, "erro": "pdf_sem_texto"}
-    try:
-        raw, usage = call_bedrock(build_prompt(doc))
-    except Exception as e:
-        return {"ok": False, "erro": "bedrock_falhou", "detalhe": str(e)[:300]}
-    data = normalize_extraction(parse_extraction(raw) or {})
-    if not data:
-        return {"ok": False, "erro": "resposta_invalida"}
-    return {"ok": True, "dados": data, "paginas": n_pages, "usage": usage}
+        return _extract_cached(link_doc)
+    except _ExtractionError as e:
+        out = {"ok": False, "erro": e.codigo}
+        if e.detalhe:
+            out["detalhe"] = e.detalhe
+        return out

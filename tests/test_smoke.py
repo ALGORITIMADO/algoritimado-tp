@@ -933,3 +933,37 @@ def test_pipeline_refuses_unauthorized_before_spending(monkeypatch):
     monkeypatch.setattr(ex, "download_dfp_pdf", _nao_deveria)
     assert ex.extract_from_link("https://x/y.zip", email="curioso@gmail.com") == {
         "ok": False, "erro": "nao_autorizado"}
+
+
+def test_allowlist_accepts_domain_without_at_sign(monkeypatch):
+    """Escrever "algoritimado.com" sem o @ não pode virar uma lista que nega todos."""
+    import data.cvm_pdf_extractor as ex
+    monkeypatch.setattr(ex, "_secret", lambda n, d="": "algoritimado.com")
+    assert ex.extraction_allowed("gabriela@algoritimado.com") is True
+    assert ex.extraction_allowed("outro@gmail.com") is False
+
+
+def test_extraction_is_cached_by_document_not_by_user(monkeypatch):
+    """Dois usuários pedindo a mesma empresa no mesmo dia = uma rodada paga."""
+    import data.cvm_pdf_extractor as ex
+    chamadas = []
+    monkeypatch.setattr(ex, "bedrock_available", lambda: True)
+    monkeypatch.setattr(ex, "extraction_allowed", lambda e: True)
+    monkeypatch.setattr(ex, "_extract_cached",
+                        lambda link: chamadas.append(link) or {"ok": True, "dados": {}})
+    ex.extract_from_link("https://x/y.zip", email="a@algoritimado.com")
+    ex.extract_from_link("https://x/y.zip", email="b@algoritimado.com")
+    # a função cacheada é chamada com o link e SÓ com o link — sem o e-mail na chave
+    assert chamadas == ["https://x/y.zip", "https://x/y.zip"]
+
+
+def test_named_failures_survive_the_cache_boundary(monkeypatch):
+    """Falha nomeada volta como dict de erro, não como exceção vazando pra tela."""
+    import data.cvm_pdf_extractor as ex
+    monkeypatch.setattr(ex, "bedrock_available", lambda: True)
+    monkeypatch.setattr(ex, "extraction_allowed", lambda e: True)
+    def _falha(link):
+        raise ex._ExtractionError("pdf_sem_texto")
+    monkeypatch.setattr(ex, "_extract_cached", _falha)
+    assert ex.extract_from_link("https://x/y.zip", email="a@algoritimado.com") == {
+        "ok": False, "erro": "pdf_sem_texto"}
