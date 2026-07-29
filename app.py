@@ -980,7 +980,32 @@ if not is_commodity:
     if cvm_pdf_extractor.bedrock_available():
         _cvm_rows = [(i, c) for i, c in enumerate(st.session_state.comparables)
                      if "CVM" in str(c.get("source", "")).upper() and c.get("source_url")]
-        if _cvm_rows:
+        _user_email = st.session_state.get("user_email", "")
+        _may_extract = cvm_pdf_extractor.extraction_allowed(_user_email)
+        if _cvm_rows and not _may_extract:
+            # Sem acesso: em vez de esconder, explicar. O recurso é o diferencial
+            # da casa — quem não pode usar deveria ao menos saber que ele existe,
+            # e como pedir. Custa nada e vira porta de entrada.
+            st.markdown(
+                ('<div class="info-box">🔎 <b>Rastreabilidade CVM (beta).</b> '
+                 'Além do dado estruturado, a plataforma lê o <b>PDF da DFP que a '
+                 'companhia protocolou</b> e devolve cada valor com a <b>página</b> e o '
+                 '<b>rótulo exato da linha</b> — o nível de prova que um Arquivo Local '
+                 'pede. Como cada extração consome crédito de IA, o recurso está '
+                 'liberado sob solicitação nesta fase gratuita: '
+                 '<a href="https://algoritimado.com" target="_blank">fale com a gente</a> '
+                 'para habilitar na sua conta.</div>'
+                 if is_pt else
+                 '<div class="info-box">🔎 <b>CVM traceability (beta).</b> Beyond the '
+                 'structured dataset, the platform reads the <b>DFP PDF the company '
+                 'actually filed</b> and returns each figure with its <b>page</b> and the '
+                 '<b>exact line label</b> — the level of evidence a Local File calls for. '
+                 'Because each extraction consumes AI credit, the feature is enabled on '
+                 'request during this free phase: '
+                 '<a href="https://algoritimado.com" target="_blank">get in touch</a> '
+                 'to enable it on your account.</div>'),
+                unsafe_allow_html=True)
+        if _cvm_rows and _may_extract:
             with st.expander(
                     "🔎 Rastreabilidade: extrair a DRE do PDF protocolado na CVM (cita a página)"
                     if is_pt else
@@ -1016,7 +1041,8 @@ if not is_commodity:
                     _comp = st.session_state.comparables[_idx]
                     with st.spinner("Baixando o documento e lendo a DRE..." if is_pt
                                     else "Downloading the document and reading the statement..."):
-                        _res = cvm_pdf_extractor.extract_from_link(_comp.get("source_url"))
+                        _res = cvm_pdf_extractor.extract_from_link(
+                            _comp.get("source_url"), email=_user_email)
                     st.session_state["pdf_extractions_used"] = _used + 1
                     if not _res.get("ok"):
                         _msgs = {
@@ -1026,6 +1052,7 @@ if not is_commodity:
                             "bedrock_falhou": "A chamada ao serviço de IA falhou.",
                             "resposta_invalida": "A resposta não veio no formato esperado.",
                             "credencial_ausente": "Credencial de IA não configurada.",
+                            "nao_autorizado": "Este recurso não está habilitado para a sua conta.",
                         }
                         st.error("⚠️ " + _msgs.get(_res.get("erro"), "Falha na extração.")
                                  + " Nada foi alterado na tabela.")

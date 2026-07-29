@@ -94,6 +94,42 @@ def bedrock_available() -> bool:
     return bool(_secret("AWS_BEARER_TOKEN_BEDROCK"))
 
 
+def extraction_allowed(email: str) -> bool:
+    """Só e-mails liberados podem gastar crédito de IA.
+
+    O app é PÚBLICO e cada extração custa dinheiro real. O limite de
+    SESSION_LIMIT protege contra clique repetido, não contra volume: sessão
+    qualquer visitante abre quantas quiser, e cem curiosos fazendo três
+    extrações cada consomem uma fatia séria do crédito. A trava de verdade é
+    esta.
+
+    Configuração no secrets: `PDF_EXTRACTION_ALLOWLIST` com e-mails e/ou
+    domínios separados por vírgula —
+        PDF_EXTRACTION_ALLOWLIST = "gabriela@x.com, @algoritimado.com"
+
+    **Falha FECHADA de propósito:** lista vazia = ninguém autorizado. Se a chave
+    do Bedrock entrar no secrets e a lista não, o pior caso é a funcionalidade
+    não aparecer — nunca crédito queimando por engano.
+    """
+    raw = _secret("PDF_EXTRACTION_ALLOWLIST").strip()
+    if not raw:
+        return False
+    alvo = (email or "").strip().lower()
+    if not alvo or "@" not in alvo:
+        return False
+    dominio = alvo.split("@")[-1]
+    for entrada in raw.split(","):
+        item = entrada.strip().lower()
+        if not item:
+            continue
+        if item.startswith("@"):
+            if dominio == item[1:]:
+                return True
+        elif item == alvo:
+            return True
+    return False
+
+
 # ── PDF ──────────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=86400, show_spinner=False)
 def download_dfp_pdf(link_doc: str) -> Optional[bytes]:
@@ -279,10 +315,16 @@ def citation_text(extracted: dict, pli: str = "operating_margin", lang: str = "p
 
 
 # ── orquestração ─────────────────────────────────────────────────────────────
-def extract_from_link(link_doc: str) -> dict:
-    """Pipeline completo. Devolve sempre um dict com 'ok' — nunca levanta."""
+def extract_from_link(link_doc: str, email: Optional[str] = None) -> dict:
+    """Pipeline completo. Devolve sempre um dict com 'ok' — nunca levanta.
+
+    Quando `email` é informado, a autorização é checada AQUI também, e não só na
+    interface: gasto de crédito não deve depender de a tela ter escondido o botão.
+    """
     if not bedrock_available():
         return {"ok": False, "erro": "credencial_ausente"}
+    if email is not None and not extraction_allowed(email):
+        return {"ok": False, "erro": "nao_autorizado"}
     pdf = download_dfp_pdf(link_doc)
     if not pdf:
         return {"ok": False, "erro": "pdf_indisponivel"}

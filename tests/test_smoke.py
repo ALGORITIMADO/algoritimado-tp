@@ -890,3 +890,46 @@ def test_pdf_report_prints_the_page_citation():
          "pdf_citation": 'DFP protocolada, pág. 21 · linha "Resultado Bruto"'}]})
     assert sem[:4] == b"%PDF" and com[:4] == b"%PDF"
     assert len(com) > len(sem)      # a citação acrescenta conteúdo à célula de fonte
+
+
+# ── Trava de acesso: crédito de IA não é público ─────────────────────────────
+# O app é aberto e cada extração custa dinheiro. O limite por sessão protege
+# contra clique repetido; sessão qualquer visitante abre quantas quiser.
+def test_allowlist_fails_closed_when_unset(monkeypatch):
+    """Chave do Bedrock no secrets sem allowlist = ninguém autorizado.
+    O pior caso passa a ser 'a funcionalidade não aparece', nunca crédito queimado."""
+    import data.cvm_pdf_extractor as ex
+    monkeypatch.setattr(ex, "_secret", lambda n, d="": "")
+    assert ex.extraction_allowed("gabriela@algoritimado.com") is False
+
+
+def test_allowlist_accepts_exact_email_and_domain(monkeypatch):
+    import data.cvm_pdf_extractor as ex
+    monkeypatch.setattr(ex, "_secret",
+                        lambda n, d="": "JUNIOR@hassmann.com.br, @algoritimado.com")
+    assert ex.extraction_allowed("junior@hassmann.com.br") is True      # caixa ignorada
+    assert ex.extraction_allowed("  Junior@Hassmann.com.br ") is True   # espaços ignorados
+    assert ex.extraction_allowed("qualquer@algoritimado.com") is True   # domínio liberado
+    assert ex.extraction_allowed("curioso@gmail.com") is False
+    assert ex.extraction_allowed("") is False
+    assert ex.extraction_allowed("sem-arroba") is False
+
+
+def test_domain_entry_does_not_match_lookalike_domain(monkeypatch):
+    """'@algoritimado.com' não pode liberar 'algoritimado.com.br' ou sufixos."""
+    import data.cvm_pdf_extractor as ex
+    monkeypatch.setattr(ex, "_secret", lambda n, d="": "@algoritimado.com")
+    assert ex.extraction_allowed("x@algoritimado.com.br") is False
+    assert ex.extraction_allowed("x@naoalgoritimado.com") is False
+
+
+def test_pipeline_refuses_unauthorized_before_spending(monkeypatch):
+    """A checagem vive no pipeline também — não depende de a tela esconder o botão."""
+    import data.cvm_pdf_extractor as ex
+    monkeypatch.setattr(ex, "bedrock_available", lambda: True)
+    monkeypatch.setattr(ex, "extraction_allowed", lambda e: False)
+    def _nao_deveria(*a, **k):
+        raise AssertionError("baixou o PDF de um usuário não autorizado")
+    monkeypatch.setattr(ex, "download_dfp_pdf", _nao_deveria)
+    assert ex.extract_from_link("https://x/y.zip", email="curioso@gmail.com") == {
+        "ok": False, "erro": "nao_autorizado"}
