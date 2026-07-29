@@ -198,25 +198,33 @@ def search_companies_cvm(
 
     filtered = cad.copy()
 
+    # Accent-insensitive matching on BOTH sides. The CVM's own sector vocabulary is
+    # accented — "Petroquímicos e Borracha", "Farmacêutico e Higiene", "Serviços
+    # Médicos" — while the keywords are plain ASCII, so "QUIMIC" never matched
+    # "Petroquímicos" and the Chemicals sector returned zero Brazilian comparables.
+    nome_norm = filtered[name_col].map(_norm_label)
+
     if company_name:
-        mask = filtered[name_col].str.contains(company_name.upper(), na=False)
-        filtered = filtered[mask]
+        filtered = filtered[nome_norm.str.contains(
+            _norm_label(company_name), regex=False, na=False)]
+        nome_norm = nome_norm.loc[filtered.index]
 
     if industry and industry in CNAE_MAP:
         keywords = CNAE_MAP[industry]
-        # Search in sector/activity columns
         sector_cols = [c for c in filtered.columns if any(k in c.upper()
                        for k in ["SETOR", "ATIVID", "CNAE", "DESCR"])]
+        por_nome = pd.Series([False] * len(filtered), index=filtered.index)
+        for kw in keywords:
+            por_nome |= nome_norm.str.contains(kw, regex=False, na=False)
         if sector_cols:
-            mask = pd.Series([False] * len(filtered), index=filtered.index)
+            por_setor = pd.Series([False] * len(filtered), index=filtered.index)
             for col in sector_cols[:3]:
+                col_norm = filtered[col].map(_norm_label)
                 for kw in keywords:
-                    mask |= filtered[col].astype(str).str.contains(kw, case=False, na=False)
-            filtered = filtered[mask | filtered[name_col].str.contains(
-                "|".join(keywords), case=False, na=False)]
+                    por_setor |= col_norm.str.contains(kw, regex=False, na=False)
+            filtered = filtered[por_setor | por_nome]
         else:
-            mask = filtered[name_col].str.contains("|".join(keywords), case=False, na=False)
-            filtered = filtered[mask]
+            filtered = filtered[por_nome]
 
     # The CAD CSV often has multiple rows for the same company (different
     # CD_CVM as the company re-registered, share class splits, etc.). Dedupe

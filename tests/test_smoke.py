@@ -10,8 +10,9 @@ from calculations.base import calculate_iqr
 from calculations.country_risk import adjust_comparable_margin
 from calculations.commodities import calculate_pic_commodity
 from data.edgar_fetcher import extract_financials, _pli_breakdown
+import data.cvm_fetcher as cvm_fetcher
 from data.cvm_fetcher import (calculate_margins_cvm, _pli_breakdown_cvm,
-                              _only_active_companies)
+                              _only_active_companies, search_companies_cvm)
 from reports.pdf_generator import generate_report, _breakdown_text, _cr_adjustment_text
 
 
@@ -728,3 +729,29 @@ def test_every_sector_has_enough_seeds_for_an_iqr():
     from data.edgar_fetcher import SIC_MAP
     magros = {s: len(v) for s, v in SIC_MAP.items() if len(v) < 5}
     assert not magros, f"setores abaixo de 5 seeds: {magros}"
+
+
+# ── Busca por setor/nome tem de ignorar acento ───────────────────────────────
+def _fake_cadastro():
+    return pd.DataFrame({
+        "CD_CVM": [1, 2, 3],
+        "DENOM_SOCIAL": ["BRASKEM S.A.", "CIA SIDERÚRGICA NACIONAL", "PADARIA SA"],
+        "SETOR_ATIV": ["Petroquímicos e Borracha", "Siderurgia e Metalurgia", "Alimentos"],
+        "SIT": ["ATIVO"] * 3,
+        "SIT_EMISSOR": ["FASE OPERACIONAL"] * 3,
+    })
+
+
+def test_sector_keyword_matches_accented_cvm_taxonomy(monkeypatch):
+    """A taxonomia da CVM é acentuada ("Petroquímicos"); as palavras-chave são
+    ASCII ("QUIMIC"). Sem normalizar, Química devolvia ZERO comparável no Brasil."""
+    monkeypatch.setattr(cvm_fetcher, "get_cvm_company_list", lambda *a, **k: _fake_cadastro())
+    out = search_companies_cvm(industry="Chemicals / Química")
+    assert "BRASKEM S.A." in list(out["DENOM_SOCIAL"])
+
+
+def test_company_name_search_ignores_accents(monkeypatch):
+    """Ninguém digita "SIDERÚRGICA" com acento na busca."""
+    monkeypatch.setattr(cvm_fetcher, "get_cvm_company_list", lambda *a, **k: _fake_cadastro())
+    out = search_companies_cvm(company_name="siderurgica")
+    assert list(out["DENOM_SOCIAL"]) == ["CIA SIDERÚRGICA NACIONAL"]
