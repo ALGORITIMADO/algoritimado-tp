@@ -124,19 +124,40 @@ def get_cvm_doc_links(year: int = 2024) -> dict:
         return {}
 
 
-def _only_active_companies(df: pd.DataFrame) -> pd.DataFrame:
-    """Drop cancelled/suspended registrations and duplicate rows per company.
+# Emitter states that disqualify a company as a comparable, matched as substrings
+# of the CVM's own `SIT_EMISSOR` field (accent/case-insensitive) so a relabelling
+# upstream doesn't silently let them back in. Of the 663 active registrants in
+# 2026: 21 in judicial recovery, 15 pre-operational, 5 in extrajudicial
+# liquidation, 2 bankrupt, 2 dormant — 615 remain in FASE OPERACIONAL.
+NON_COMPARABLE_EMITTER_STATES = ("RECUPERA", "FALID", "LIQUIDA", "PARALISA", "PRE-OPERACIONAL")
 
-    The CVM registry lists every company that EVER registered: 1,912 of its 2,677
-    rows are CANCELADA. Keeping them poisons the candidate pool — the search takes
-    the first N keyword matches, and in "Manufatura" 220 of the 259 matches are
-    long-dead registrations with no DFP to fetch. That is why a sector as broad as
-    manufacturing was coming back with two comparables instead of fifteen.
+
+def _only_active_companies(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep only registrants that are alive AND operating, one row each.
+
+    Two filters, both on official CVM fields:
+
+    `SIT` — the registry lists every company that EVER registered: 1,912 of its
+    2,677 rows are CANCELADA. Keeping them poisons the candidate pool, because the
+    search takes the first N keyword matches; in "Manufatura" 220 of the 259
+    matches were long-dead registrations with no DFP to fetch, which is why a
+    sector that broad came back with two comparables instead of fifteen.
+
+    `SIT_EMISSOR` — a company in judicial recovery, bankrupt, in liquidation,
+    dormant or pre-operational is not operating under normal market conditions,
+    so its margin is not an arm's length benchmark (Bardella at -50.34% and
+    Americanas were sitting in the set). Excluding them on the regulator's own
+    published flag keeps the criterion auditable in the report — which is the
+    point: an exclusion a reviewer can verify beats one a model asserted.
     """
     if df is None or df.empty:
         return df
     if "SIT" in df.columns:
         df = df[df["SIT"].astype(str).str.strip().str.upper() == "ATIVO"]
+    if "SIT_EMISSOR" in df.columns:
+        estado = df["SIT_EMISSOR"].map(_norm_label)
+        df = df[~estado.str.contains("|".join(NON_COMPARABLE_EMITTER_STATES),
+                                     regex=True, na=False)]
     if "CD_CVM" in df.columns:
         df = df.drop_duplicates(subset=["CD_CVM"], keep="last")
     return df.reset_index(drop=True)

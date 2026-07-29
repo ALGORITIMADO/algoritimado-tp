@@ -715,6 +715,28 @@ def generate_report(analysis_data: dict) -> bytes:
                      "assess the materiality of the country-risk difference (guidance in "
                      "Annex II of the IN).")
             story.append(Paragraph(fnote, S["small"]))
+
+        # Brazilian comparables: state the selection criterion. An exclusion the
+        # reviewer can verify against the CVM registry is worth more than a silent
+        # one — art. 32 expects the comparability criteria to be documented.
+        if any("CVM" in str(c.get("source", "")) for c in comparables):
+            story.append(Spacer(1, 0.15*cm))
+            story.append(Paragraph(_esc_xml(
+                ("Critério de seleção dos comparáveis brasileiros: companhias abertas com "
+                 "registro ATIVO na CVM e em FASE OPERACIONAL. Foram excluídos os emissores "
+                 "classificados pela própria CVM (campo SIT_EMISSOR do cadastro de companhias "
+                 "abertas) como em recuperação judicial ou equivalente, falidos, em liquidação "
+                 "extrajudicial, paralisados ou pré-operacionais — não operam em condições "
+                 "normais de mercado, de modo que suas margens não servem de parâmetro "
+                 "arm's length."
+                 if lang == "pt" else
+                 "Selection criterion for Brazilian comparables: listed companies with an "
+                 "ACTIVE CVM registration and in OPERATIONAL PHASE. Issuers flagged by the CVM "
+                 "itself (SIT_EMISSOR field of the listed-company registry) as under judicial "
+                 "recovery or equivalent, bankrupt, in extrajudicial liquidation, dormant or "
+                 "pre-operational were excluded — they do not operate under normal market "
+                 "conditions, so their margins are not an arm's length benchmark.")),
+                S["small"]))
         story.append(Spacer(1, 0.5*cm))
 
     # ── PIC COMMODITIES + RTC (art. 37–38) ──────────────────────────────────

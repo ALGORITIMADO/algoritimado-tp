@@ -164,14 +164,18 @@ def test_pdf_foreign_comparables_note():
         "method": "MLT", "pli": "Margem Operacional", "fiscal_year": "2024",
         "iqr_result": iqr,
     }
+    # Baseline that triggers NEITHER note: a manually typed comparable.
+    manual_only = generate_report({**base, "comparables": [
+        {"name": "Manual Co", "value": 20.0, "source": "Manual"}]})
     domestic_only = generate_report({**base, "comparables": [
         {"name": "BR Co", "value": 20.0, "source": "CVM Brasil 2024 (DFP)"}]})
     with_foreign = generate_report({**base, "comparables": [
         {"name": "US Co", "value": 20.0, "source": "SEC EDGAR 2024 (10-K)"}]})
-    assert domestic_only[:4] == b"%PDF" and with_foreign[:4] == b"%PDF"
-    # The note adds a paragraph, so the foreign variant must be heavier than
-    # the domestic one beyond the small source-label difference.
-    assert len(with_foreign) > len(domestic_only) + 200
+    assert all(p[:4] == b"%PDF" for p in (manual_only, domestic_only, with_foreign))
+    # Each source carries its own disclosure paragraph: art. 23 / Anexo II for the
+    # foreign set, the CVM selection criterion for the Brazilian one.
+    assert len(with_foreign) > len(manual_only) + 200
+    assert len(domestic_only) > len(manual_only) + 200
 
 
 # ── Country-risk adjustment — Anexo II IN 2.161/2023 ─────────────────────────
@@ -638,3 +642,48 @@ def test_duplicate_registry_rows_collapse_to_one():
     out = _only_active_companies(cad)
     assert len(out) == 2
     assert out[out["CD_CVM"] == 7]["DENOM_SOCIAL"].iloc[0] == "X SA (novo registro)"
+
+
+# ── Emissor precisa estar operando, não só registrado ────────────────────────
+def test_non_operating_issuers_are_excluded():
+    """Recuperação judicial, falência, liquidação, paralisia e pré-operacional não
+    operam em condições normais — a margem deles não é parâmetro arm's length."""
+    cad = pd.DataFrame({
+        "CD_CVM": [1, 2, 3, 4, 5, 6],
+        "DENOM_SOCIAL": ["OPERANTE SA", "BARDELLA SA", "FALIDA SA",
+                         "EM LIQUIDACAO SA", "PARADA SA", "NOVA SA"],
+        "SIT": ["ATIVO"] * 6,
+        "SIT_EMISSOR": ["FASE OPERACIONAL",
+                        "EM RECUPERAÇÃO JUDICIAL OU EQUIVALENTE",
+                        "FALIDA", "LIQUIDAÇÃO EXTRAJUDICIAL",
+                        "PARALISADA", "FASE PRÉ-OPERACIONAL"],
+    })
+    assert list(_only_active_companies(cad)["CD_CVM"]) == [1]
+
+
+def test_registry_without_the_emitter_column_still_works():
+    """Se a CVM deixar de publicar SIT_EMISSOR, o filtro de SIT continua valendo."""
+    cad = pd.DataFrame({
+        "CD_CVM": [1, 2],
+        "DENOM_SOCIAL": ["A SA", "B SA"],
+        "SIT": ["ATIVO", "CANCELADA"],
+    })
+    assert list(_only_active_companies(cad)["CD_CVM"]) == [1]
+
+
+def test_report_documents_why_brazilian_comparables_were_excluded():
+    """Art. 32 espera critério de comparabilidade documentado: o laudo tem de
+    dizer que emissores fora de fase operacional foram excluídos."""
+    from calculations.base import calculate_iqr
+    iqr = calculate_iqr([10.0, 15.0, 20.0, 25.0], tested_party_value=18.0)
+    pdf = generate_report({
+        "language": "pt", "company_name": "Teste", "tested_party_name": "Teste",
+        "method": "MLT (TNMM)", "pli": "Margem Operacional (%)", "fiscal_year": "2024",
+        "iqr_result": iqr,
+        "comparables": [
+            {"name": "BLAU FARMACÊUTICA S.A.", "value": 18.74, "source": "CVM Brasil 2024"},
+            {"name": "BAUMER SA", "value": 18.51, "source": "CVM Brasil 2024"},
+            {"name": "CIA SIDERURGICA NACIONAL", "value": 9.77, "source": "CVM Brasil 2024"},
+        ],
+    })
+    assert pdf[:4] == b"%PDF" and len(pdf) > 2000
