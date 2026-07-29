@@ -567,17 +567,24 @@ def generate_report(analysis_data: dict) -> bytes:
             # stay as plain text. '&' must be XML-escaped for ReportLab.
             src_txt = c.get("source", "SEC EDGAR / CVM")
             src_url = c.get("source_url") or ""
+            # Page citation from the filed CVM PDF, when the user ran the
+            # traceability extraction: "DFP protocolada, pág. 21 · linha ...".
+            # This is the strongest form of the audit trail — it points at the
+            # line inside the document, not merely at the document.
+            _cit = str(c.get("pdf_citation") or "").strip()
+            _cit_html = ('<br/><font size="6.5" color="#1B4332">' + _esc_xml(_cit) + '</font>'
+                         if _cit else "")
             if src_url:
                 # Filing label depends on the source: SEC = 10-K/20-F, CVM = DFP.
                 _up = src_txt.upper()
                 _suffix = " (10-K/20-F)" if "SEC" in _up else (" (DFP)" if "CVM" in _up else "")
                 _u = src_url.replace("&", "&amp;")
                 src_cell = Paragraph(
-                    '<a href="{}" color="#1d4ed8"><u>{}{}</u></a>'.format(
-                        _u, _esc_xml(src_txt), _suffix),
+                    '<a href="{}" color="#1d4ed8"><u>{}{}</u></a>{}'.format(
+                        _u, _esc_xml(src_txt), _suffix, _cit_html),
                     _cell_style)
             else:
-                src_cell = Paragraph(_esc_xml(src_txt), _cell_style)
+                src_cell = Paragraph(_esc_xml(src_txt) + _cit_html, _cell_style)
             # Company name, plus a small 'show the math' line underneath when the
             # comparable carries a breakdown (numerator / revenue = margin, from
             # the same filing). Manual/CVM rows have none → just the name.

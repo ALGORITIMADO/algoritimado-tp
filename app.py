@@ -14,6 +14,7 @@ from calculations.methods import (calculate_tnmm, calculate_pic,
 from reports.pdf_generator import generate_report
 from data.edgar_fetcher import SIC_MAP
 from data.cvm_fetcher import CNAE_MAP, CVM_SECTOR_FALLBACK
+import data.cvm_pdf_extractor as cvm_pdf_extractor
 from data.comparables_finder import find_comparables, ALL_INDUSTRIES
 
 st.set_page_config(page_title="Algoritimado — Transfer Pricing Platform",
@@ -971,6 +972,107 @@ if not is_commodity:
             st.session_state.comparables = [c for c in st.session_state.comparables if c["value"] != 0.0 or c["name"].strip() != ""]
             _reset_comp_widget_state()
             st.rerun()
+
+    # ── Rastreabilidade CVM: extrai a DRE do PDF protocolado, com a página ────
+    # Sob demanda, nunca automático: cada rodada tem custo no Bedrock e a maioria
+    # das buscas não vira laudo. Só aparece quando há credencial configurada e
+    # algum comparável da CVM com link do documento oficial.
+    if cvm_pdf_extractor.bedrock_available():
+        _cvm_rows = [(i, c) for i, c in enumerate(st.session_state.comparables)
+                     if "CVM" in str(c.get("source", "")).upper() and c.get("source_url")]
+        if _cvm_rows:
+            with st.expander(
+                    "🔎 Rastreabilidade: extrair a DRE do PDF protocolado na CVM (cita a página)"
+                    if is_pt else
+                    "🔎 Traceability: read the income statement from the filed CVM PDF (cites the page)",
+                    expanded=False):
+                st.markdown(
+                    ('<div class="info-box">Lê o documento que a companhia protocolou e devolve '
+                     'cada número com a <b>página</b> e o <b>rótulo exato da linha</b> — é o que '
+                     'transforma o comparável em prova rastreável no Arquivo Local. Confere o '
+                     'resultado contra o dado estruturado da CVM e avisa se divergirem.<br>'
+                     '<b>Custo:</b> cada extração consome crédito de IA (ordem de US$ 0,50). '
+                     f'Limite de {cvm_pdf_extractor.SESSION_LIMIT} por sessão.</div>'
+                     if is_pt else
+                     '<div class="info-box">Reads the document the company actually filed and '
+                     'returns each figure with its <b>page</b> and the <b>exact line label</b> — '
+                     'what turns a comparable into traceable evidence in the Local File. '
+                     'Cross-checks against CVM structured data and warns on divergence.<br>'
+                     '<b>Cost:</b> each extraction consumes AI credit (about US$ 0.50). '
+                     f'Limit of {cvm_pdf_extractor.SESSION_LIMIT} per session.</div>'),
+                    unsafe_allow_html=True)
+
+                _opts = {f"{c.get('name') or f'linha {i+1}'}": i for i, c in _cvm_rows}
+                _pick = st.selectbox(
+                    "Comparável da CVM" if is_pt else "CVM comparable",
+                    list(_opts.keys()), key="pdf_pick")
+                _used = st.session_state.get("pdf_extractions_used", 0)
+                _left = cvm_pdf_extractor.SESSION_LIMIT - _used
+                if st.button(
+                        f"📄 Extrair do PDF protocolado ({_left} restante(s))" if is_pt
+                        else f"📄 Extract from filed PDF ({_left} left)",
+                        key="pdf_extract_btn", disabled=_left <= 0):
+                    _idx = _opts[_pick]
+                    _comp = st.session_state.comparables[_idx]
+                    with st.spinner("Baixando o documento e lendo a DRE..." if is_pt
+                                    else "Downloading the document and reading the statement..."):
+                        _res = cvm_pdf_extractor.extract_from_link(_comp.get("source_url"))
+                    st.session_state["pdf_extractions_used"] = _used + 1
+                    if not _res.get("ok"):
+                        _msgs = {
+                            "pdf_indisponivel": "Não consegui baixar o documento oficial da CVM.",
+                            "pdf_ilegivel": "O PDF não pôde ser lido.",
+                            "pdf_sem_texto": "O PDF não tem camada de texto (documento escaneado).",
+                            "bedrock_falhou": "A chamada ao serviço de IA falhou.",
+                            "resposta_invalida": "A resposta não veio no formato esperado.",
+                            "credencial_ausente": "Credencial de IA não configurada.",
+                        }
+                        st.error("⚠️ " + _msgs.get(_res.get("erro"), "Falha na extração.")
+                                 + " Nada foi alterado na tabela.")
+                    else:
+                        _d = _res["dados"]
+                        _cit = cvm_pdf_extractor.citation_text(
+                            _d, pli_option, "pt" if is_pt else "en")
+                        _chk = cvm_pdf_extractor.cross_check(
+                            _d, _comp.get("value"), pli_option)
+                        # A citação fica NO comparável: é ela que vai para o laudo.
+                        st.session_state.comparables[_idx]["pdf_citation"] = _cit
+                        st.session_state.comparables[_idx]["pdf_extraction"] = _d
+                        st.success(f"✅ {_d.get('empresa') or _comp.get('name')} — "
+                                   f"exercício {_d.get('exercicio') or '—'} · {_cit}")
+                        _rows = [
+                            ("Receita líquida" if is_pt else "Net revenue", "receita_liquida"),
+                            ("Resultado bruto" if is_pt else "Gross profit", "lucro_bruto"),
+                            ("Resultado operacional (EBIT)" if is_pt else "Operating result (EBIT)", "resultado_operacional"),
+                            ("Lucro líquido" if is_pt else "Net income", "lucro_liquido"),
+                        ]
+                        st.dataframe(pd.DataFrame([
+                            {("Linha" if is_pt else "Line"): lbl,
+                             ("Valor" if is_pt else "Value"): (_d["itens"][k]["valor"]),
+                             ("Página" if is_pt else "Page"): _d["itens"][k]["pagina"],
+                             ("Rótulo no documento" if is_pt else "Label in document"): _d["itens"][k]["rotulo"]}
+                            for lbl, k in _rows
+                        ]), hide_index=True, width="stretch")
+                        if _chk["status"] == "confere":
+                            st.info(f"✅ Confere com o dado estruturado da CVM: "
+                                    f"PDF {_chk['pdf']}% vs base {_chk['csv']}% "
+                                    f"(diferença {_chk['diferenca_pp']} p.p.)."
+                                    if is_pt else
+                                    f"✅ Matches CVM structured data: PDF {_chk['pdf']}% vs "
+                                    f"dataset {_chk['csv']}% (diff {_chk['diferenca_pp']} p.p.).")
+                        elif _chk["status"] == "divergente":
+                            st.warning(
+                                f"⚠️ **Divergência entre as duas fontes da CVM:** o PDF protocolado "
+                                f"indica {_chk['pdf']}% e a base estruturada {_chk['csv']}% "
+                                f"({_chk['diferenca_pp']} p.p. de diferença). Verifique qual "
+                                f"exercício e qual demonstração (consolidada x individual) cada "
+                                f"fonte está reportando antes de usar este comparável."
+                                if is_pt else
+                                f"⚠️ **The two CVM sources disagree:** the filed PDF shows "
+                                f"{_chk['pdf']}% and the structured dataset {_chk['csv']}% "
+                                f"({_chk['diferenca_pp']} p.p. apart). Check which fiscal year and "
+                                f"which statement (consolidated vs individual) each source reports "
+                                f"before using this comparable.")
 
 # ── COUNTRY-RISK ADJUSTMENT (Anexo II IN 2.161) ──────────────────────────────
 # The rule treats country risk as a general comparability adjustment (art. 32,

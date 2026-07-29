@@ -791,3 +791,102 @@ def test_fallback_sectors_are_declared_for_the_ui():
     from data.cvm_fetcher import CVM_SECTOR_FALLBACK, CNAE_MAP
     assert set(CVM_SECTOR_FALLBACK) <= set(CNAE_MAP)
     assert "Cannabis / Cannabis Medicinal" not in CVM_SECTOR_FALLBACK  # zero é fato de mercado
+
+
+# ── Rastreabilidade CVM: extração da DRE do PDF protocolado ──────────────────
+# Tudo offline: o que se testa é o parsing, a validação, a aritmética das margens
+# e o confronto com o dado estruturado. A chamada ao Bedrock não entra em teste.
+from data.cvm_pdf_extractor import (parse_extraction, normalize_extraction,      # noqa: E402
+                                    cross_check, citation_text, _num)
+
+_RESPOSTA_BLAU = """Segue o JSON solicitado:
+{
+  "empresa": "BLAU FARMACÊUTICA S.A.",
+  "exercicio": "2024",
+  "escala": "MIL",
+  "itens": {
+    "receita_liquida":       {"valor": 1754376, "pagina": 21, "rotulo": "Receita de Venda de Bens e/ou Serviços"},
+    "lucro_bruto":           {"valor": 658750,  "pagina": 21, "rotulo": "Resultado Bruto"},
+    "resultado_operacional": {"valor": 328797,  "pagina": 21, "rotulo": "Resultado Antes do Resultado Financeiro e dos Tributos"},
+    "lucro_liquido":         {"valor": 213525,  "pagina": 21, "rotulo": "Lucro/Prejuízo Consolidado do Período"}
+  }
+}
+"""
+
+
+def test_parse_extraction_ignores_text_around_the_json():
+    d = parse_extraction(_RESPOSTA_BLAU)
+    assert d["empresa"].startswith("BLAU")
+
+
+def test_parse_extraction_rejects_non_json():
+    assert parse_extraction("não encontrei a DRE neste documento") is None
+    assert parse_extraction("") is None
+
+
+def test_margins_are_recomputed_from_the_extracted_values():
+    """A divisão é NOSSA: o modelo lê a tabela bem e erra a aritmética às vezes."""
+    d = normalize_extraction(parse_extraction(_RESPOSTA_BLAU))
+    assert d["margens"]["margem_bruta_pct"] == 37.549        # 658.750 / 1.754.376
+    assert d["margens"]["margem_operacional_pct"] == 18.7415
+    assert d["margens"]["margem_liquida_pct"] == 12.171
+
+
+def test_model_supplied_margins_are_never_trusted():
+    """Mesmo que o modelo mande margem errada no JSON, vale a nossa conta."""
+    payload = parse_extraction(_RESPOSTA_BLAU)
+    payload["margens"] = {"margem_operacional_pct": 99.9}     # valor absurdo
+    d = normalize_extraction(payload)
+    assert d["margens"]["margem_operacional_pct"] == 18.7415
+
+
+def test_extraction_without_revenue_fails_instead_of_guessing():
+    payload = {"itens": {"lucro_bruto": {"valor": 100, "pagina": 3, "rotulo": "x"}}}
+    assert normalize_extraction(payload) is None
+
+
+def test_brazilian_number_format_is_accepted():
+    assert _num("1.754.376") == 1754376.0
+    assert _num("18,7415") == 18.7415
+    assert _num("(1.208.109)") == -1208109.0
+    assert _num(None) is None and _num("") is None
+
+
+def test_cross_check_confirms_when_sources_agree():
+    d = normalize_extraction(parse_extraction(_RESPOSTA_BLAU))
+    r = cross_check(d, 18.74, "operating_margin")
+    assert r["status"] == "confere"
+
+
+def test_cross_check_flags_divergence_instead_of_averaging():
+    """Duas fontes que discordam são um aviso — nunca uma média."""
+    d = normalize_extraction(parse_extraction(_RESPOSTA_BLAU))
+    r = cross_check(d, 16.64, "operating_margin")   # o valor do mapa de contas antigo
+    assert r["status"] == "divergente"
+    assert r["diferenca_pp"] > 2
+
+
+def test_citation_carries_page_and_exact_line_label():
+    d = normalize_extraction(parse_extraction(_RESPOSTA_BLAU))
+    cit = citation_text(d, "operating_margin", "pt")
+    assert "pág. 21" in cit and "Resultado Antes do Resultado Financeiro" in cit
+    assert "p. 21" in citation_text(d, "operating_margin", "en")
+
+
+def test_pdf_report_prints_the_page_citation():
+    from calculations.base import calculate_iqr
+    iqr = calculate_iqr([10.0, 15.0, 20.0, 25.0], tested_party_value=18.0)
+    base = {
+        "language": "pt", "company_name": "Teste", "tested_party_name": "Teste",
+        "method": "MLT (TNMM)", "pli": "Margem Operacional (%)", "fiscal_year": "2024",
+        "iqr_result": iqr,
+    }
+    sem = generate_report({**base, "comparables": [
+        {"name": "BLAU", "value": 18.74, "source": "CVM Brasil 2024",
+         "source_url": "https://cvm.gov.br/doc?x=1"}]})
+    com = generate_report({**base, "comparables": [
+        {"name": "BLAU", "value": 18.74, "source": "CVM Brasil 2024",
+         "source_url": "https://cvm.gov.br/doc?x=1",
+         "pdf_citation": 'DFP protocolada, pág. 21 · linha "Resultado Bruto"'}]})
+    assert sem[:4] == b"%PDF" and com[:4] == b"%PDF"
+    assert len(com) > len(sem)      # a citação acrescenta conteúdo à célula de fonte

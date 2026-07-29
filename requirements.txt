@@ -3,3 +3,8 @@ pandas>=2.0.0
 numpy>=1.24.0
 plotly>=5.18.0
 reportlab>=4.1.0
+# Rastreabilidade CVM (data/cvm_pdf_extractor.py): lê o PDF da DFP protocolada e
+# extrai a DRE com citação de página via Claude no Amazon Bedrock. boto3>=1.43
+# consome a API key do Bedrock por variável de ambiente.
+pypdf>=4.0.0
+boto3>=1.43.0
