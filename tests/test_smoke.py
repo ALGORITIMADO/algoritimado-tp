@@ -755,3 +755,39 @@ def test_company_name_search_ignores_accents(monkeypatch):
     monkeypatch.setattr(cvm_fetcher, "get_cvm_company_list", lambda *a, **k: _fake_cadastro())
     out = search_companies_cvm(company_name="siderurgica")
     assert list(out["DENOM_SOCIAL"]) == ["CIA SIDERÚRGICA NACIONAL"]
+
+
+# ── Setores que a taxonomia da CVM não carrega ───────────────────────────────
+def test_biotech_falls_back_to_the_cvm_pharma_bucket(monkeypatch):
+    """A CVM classifica a Biomm (biotech) como "Farmacêutico e Higiene". Sem esse
+    mapeamento, Biotecnologia devolvia zero comparável DOMÉSTICO — e é o doméstico
+    que o art. 23 da IN 2.161 prioriza."""
+    cad = pd.DataFrame({
+        "CD_CVM": [1, 2],
+        "DENOM_SOCIAL": ["BIOMM SA", "PADARIA SA"],
+        "SETOR_ATIV": ["Farmacêutico e Higiene", "Alimentos"],
+        "SIT": ["ATIVO"] * 2, "SIT_EMISSOR": ["FASE OPERACIONAL"] * 2,
+    })
+    monkeypatch.setattr(cvm_fetcher, "get_cvm_company_list", lambda *a, **k: cad)
+    out = search_companies_cvm(industry="Biotech / Biotecnologia")
+    assert list(out["DENOM_SOCIAL"]) == ["BIOMM SA"]
+
+
+def test_cosmetics_falls_back_to_the_same_bucket(monkeypatch):
+    cad = pd.DataFrame({
+        "CD_CVM": [1, 2],
+        "DENOM_SOCIAL": ["NATURA COSMETICOS SA", "MINERADORA SA"],
+        "SETOR_ATIV": ["Farmacêutico e Higiene", "Extração Mineral"],
+        "SIT": ["ATIVO"] * 2, "SIT_EMISSOR": ["FASE OPERACIONAL"] * 2,
+    })
+    monkeypatch.setattr(cvm_fetcher, "get_cvm_company_list", lambda *a, **k: cad)
+    out = search_companies_cvm(industry="Cosmetics / Cosméticos")
+    assert list(out["DENOM_SOCIAL"]) == ["NATURA COSMETICOS SA"]
+
+
+def test_fallback_sectors_are_declared_for_the_ui():
+    """O app precisa poder avisar de qual balde vieram — busca ampliada em
+    silêncio é problema de comparabilidade esperando para acontecer."""
+    from data.cvm_fetcher import CVM_SECTOR_FALLBACK, CNAE_MAP
+    assert set(CVM_SECTOR_FALLBACK) <= set(CNAE_MAP)
+    assert "Cannabis / Cannabis Medicinal" not in CVM_SECTOR_FALLBACK  # zero é fato de mercado

@@ -11,12 +11,16 @@ CVM_BASE = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS"
 # CNAE sector map — sector name → keywords for filtering
 CNAE_MAP = {
     "Pharmaceutical / Farmacêutico":  ["FARMAC", "MEDIC", "LABORAT", "BIOMED"],
-    "Biotech / Biotecnologia":        ["BIOTEC", "BIOLOG", "GENOMA"],
+    # A CVM não tem balde de biotecnologia: classifica a Biomm, que é biotech, como
+    # "Farmacêutico e Higiene". Sem FARMAC aqui o setor devolvia zero comparável
+    # doméstico — e comparável doméstico é o que o art. 23 da IN 2.161 prioriza.
+    "Biotech / Biotecnologia":        ["BIOTEC", "BIOLOG", "GENOMA", "FARMAC"],
     "Cannabis / Cannabis Medicinal":  ["CANNABIS", "CANABIS", "MACONHA", "CANABIDIOL", "CBD"],
     "Agriculture / Agronegócio":      ["AGRO", "AGRICOL", "CULTIVO", "RURAL", "GRAOS", "CANA"],
     "AgTech / Tecnologia Agrícola":   ["AGRO", "IRRIGAC", "SEMENTES", "FERTIL"],
     "Food & Beverage / Alimentos":    ["ALIMENT", "BEBID", "FRIGORI", "LATICIN", "ACUCAR"],
-    "Cosmetics / Cosméticos":         ["COSMETIC", "BELEZA", "PERFUMARIA", "HIGIENE PESSOAL", "NATURA", "BOTICARIO"],
+    # Mesma história: a Natura está sob "Farmacêutico e Higiene" no cadastro da CVM.
+    "Cosmetics / Cosméticos":         ["COSMETIC", "BELEZA", "PERFUMARIA", "HIGIENE", "NATURA", "BOTICARIO"],
     "Chemicals / Química":            ["QUIMIC", "PETROQUIM", "RESINAS", "FERTILIZ"],
     "Oil & Gas / Petróleo e Gás":     ["PETROLEO", "GAS", "PETROQ", "COMBUSTIV"],
     "Software / Tecnologia":          ["TECNOL", "SOFTWARE", "INFORM", "DIGITAL", "DADOS"],
@@ -63,6 +67,15 @@ ACCOUNT_MAP = {
 def _norm_label(s) -> str:
     """Upper-case, accent-stripped account label for robust matching."""
     return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode().upper()
+
+
+# Sectors the CVM's taxonomy does not carry, answered from the nearest bucket the
+# regulator actually uses. Surfaced to the user: a widened search the analyst
+# doesn't know about is a comparability problem waiting to happen.
+CVM_SECTOR_FALLBACK = {
+    "Biotech / Biotecnologia": "Farmacêutico e Higiene",
+    "Cosmetics / Cosméticos": "Farmacêutico e Higiene",
+}
 
 
 @st.cache_data(ttl=86400, show_spinner=False)

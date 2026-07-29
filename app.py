@@ -13,7 +13,7 @@ from calculations.methods import (calculate_tnmm, calculate_pic,
                                    calculate_pci_pecex)
 from reports.pdf_generator import generate_report
 from data.edgar_fetcher import SIC_MAP
-from data.cvm_fetcher import CNAE_MAP
+from data.cvm_fetcher import CNAE_MAP, CVM_SECTOR_FALLBACK
 from data.comparables_finder import find_comparables, ALL_INDUSTRIES
 
 st.set_page_config(page_title="Algoritimado — Transfer Pricing Platform",
@@ -809,6 +809,25 @@ if not is_commodity:
                         if auto_name_cvm and "CVM Brasil" in auto_sources \
                                 and not _srcs.str.contains("CVM Brasil").any():
                             _misses.append(f"“{auto_name_cvm}” (CVM Brasil)")
+                        # Sector the CVM taxonomy doesn't carry: say which bucket
+                        # answered, so the analyst curates instead of assuming the
+                        # rows came from an exact sector match.
+                        _fb = CVM_SECTOR_FALLBACK.get(auto_industry or "")
+                        if _fb and "CVM Brasil" in auto_sources \
+                                and _srcs.str.contains("CVM Brasil").any():
+                            st.info(
+                                (f"ℹ️ A CVM não classifica empresas como **{auto_industry}**. "
+                                 f"Os comparáveis brasileiros acima vieram do setor "
+                                 f"**“{_fb}”**, que é como o regulador classifica essas "
+                                 f"companhias — avalie a comparabilidade funcional de cada um "
+                                 f"antes de incluir no laudo."
+                                 if is_pt else
+                                 f"ℹ️ The CVM does not classify companies as **{auto_industry}**. "
+                                 f"The Brazilian comparables above came from the "
+                                 f"**“{_fb}”** sector, which is how the regulator classifies "
+                                 f"these companies — assess each one's functional "
+                                 f"comparability before using it in the report.")
+                            )
                         if _misses:
                             st.info(
                                 (f"ℹ️ Nenhuma empresa encontrada com o nome {' e '.join(_misses)}. "
