@@ -1054,6 +1054,8 @@ if not is_commodity:
                             "credencial_ausente": "Credencial de IA não configurada.",
                             "nao_autorizado": "Este recurso não está habilitado para a sua conta.",
                         }
+                        _log_event("pdf_extraction_failed", {
+                            "erro": _res.get("erro"), "empresa": _comp.get("name")})
                         st.error("⚠️ " + _msgs.get(_res.get("erro"), "Falha na extração.")
                                  + " Nada foi alterado na tabela.")
                     else:
@@ -1065,6 +1067,22 @@ if not is_commodity:
                         # A citação fica NO comparável: é ela que vai para o laudo.
                         st.session_state.comparables[_idx]["pdf_citation"] = _cit
                         st.session_state.comparables[_idx]["pdf_extraction"] = _d
+                        # Instrumentação: sem isto, o gasto de token no Bedrock não
+                        # aparece em lugar nenhum. Registra quem usou, em que empresa,
+                        # se as duas fontes da CVM concordaram e quanto custou.
+                        _usage = _res.get("usage") or {}
+                        _log_event("pdf_extraction_run", {
+                            "empresa": _d.get("empresa") or _comp.get("name"),
+                            "exercicio": _d.get("exercicio"),
+                            "paginas_pdf": _res.get("paginas"),
+                            "pli": pli_option,
+                            "pagina_citada": (_d.get("itens") or {}).get(
+                                "resultado_operacional", {}).get("pagina"),
+                            "cross_check": _chk.get("status"),
+                            "diferenca_pp": _chk.get("diferenca_pp"),
+                            "input_tokens": _usage.get("inputTokens"),
+                            "output_tokens": _usage.get("outputTokens"),
+                        })
                         st.success(f"✅ {_d.get('empresa') or _comp.get('name')} — "
                                    f"exercício {_d.get('exercicio') or '—'} · {_cit}")
                         _rows = [
