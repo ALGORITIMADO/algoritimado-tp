@@ -877,16 +877,28 @@ if not is_commodity:
             st.dataframe(display_df, hide_index=False, width="stretch",
                          height=min(60 + len(res) * 38, 400))
 
-            # Selection
-            sel_label = "Selecionar por índice (ex: 0,1,2):" if is_pt else "Select by index (e.g. 0,1,2):"
-            sel_input = st.text_input(sel_label, placeholder="0,1,2,3,4", key="auto_sel")
+            # Selection. This used to be a text_input where you typed "0,1,2".
+            # Streamlit commits a text_input's pending value on blur, and that
+            # rerun eats the click that caused the blur — so the first press of
+            # the button below did nothing and only the second one added rows.
+            # A multiselect has no pending state, so the first click always
+            # lands, and nobody has to translate a company into a row number.
+            sel_label = "Selecione os comparáveis a adicionar:" if is_pt else "Select comparables to add:"
+            _opts = [f"{i} — {res.iloc[i]['name']}" for i in range(len(res))]
+            sel_opts = st.multiselect(sel_label, _opts, default=_opts[:5], key="auto_sel_ms")
 
             add_label = "➕ Adicionar selecionados à tabela" if is_pt else "➕ Add selected to table"
             if st.button(add_label, key="auto_add_btn"):
                 try:
-                    indices = [int(i.strip()) for i in sel_input.split(",") if i.strip().isdigit()]
+                    # The index prefix is ours, so splitting on the first " — "
+                    # is safe even when the company name contains a dash.
+                    indices = [int(s.split(" — ", 1)[0]) for s in sel_opts]
                     if not indices:
-                        indices = list(range(min(5, len(res))))
+                        # Deselecting everything and clicking add used to append
+                        # the first five anyway — the opposite of what was asked.
+                        st.warning("Nenhum comparável selecionado." if is_pt
+                                   else "No comparable selected.")
+                        st.stop()
                     added = 0
                     for idx in indices:
                         if idx < len(res):
