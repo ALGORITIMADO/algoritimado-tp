@@ -1016,11 +1016,20 @@ def test_fetchers_resolve_none_year_instead_of_requesting_none_zip(monkeypatch):
 # primeiro caía no ramo sem filtro e a CVM devolvia o começo alfabético do
 # cadastro como se fosse o setor pedido.
 
-def test_every_dropdown_sector_has_a_cvm_bucket():
+def test_every_dropdown_sector_has_a_bucket_in_both_sources():
+    """O dropdown é a união dos dois mapas — checar as DUAS direções.
+
+    Um setor presente só num lado some silenciosamente do outro: no EDGAR volta
+    vazio (falha fechada, tolerável) e na CVM voltava o cadastro inteiro (falha
+    aberta, foi o bug do Telecom). Alinhar os dois mapas mata as duas.
+    """
     from data.comparables_finder import ALL_INDUSTRIES
     from data.cvm_fetcher import CNAE_MAP
-    sem_balde = [s for s in ALL_INDUSTRIES if s not in CNAE_MAP]
-    assert sem_balde == [], f"setor no dropdown sem balde na CVM: {sem_balde}"
+    from data.edgar_fetcher import SIC_MAP
+    sem_cvm = [s for s in ALL_INDUSTRIES if s not in CNAE_MAP]
+    sem_edgar = [s for s in ALL_INDUSTRIES if s not in SIC_MAP]
+    assert sem_cvm == [], f"setor no dropdown sem balde na CVM: {sem_cvm}"
+    assert sem_edgar == [], f"setor no dropdown sem balde no EDGAR: {sem_edgar}"
 
 
 def test_unmapped_sector_returns_nothing_instead_of_the_alphabet(monkeypatch):
@@ -1036,3 +1045,9 @@ def test_unmapped_sector_returns_nothing_instead_of_the_alphabet(monkeypatch):
     # mas busca por nome continua funcionando mesmo com setor sem balde
     achou = cf.search_companies_cvm(industry="Setor Que Nao Existe", company_name="BBB")
     assert len(achou) == 1
+
+
+def test_edgar_fails_closed_on_unmapped_sector():
+    """O EDGAR já falhava fechado; travar isso pra não regredir pro modo CVM."""
+    from data.edgar_fetcher import fetch_comparables_edgar
+    assert fetch_comparables_edgar(industry="Setor Que Nao Existe", limit=5).empty
