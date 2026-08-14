@@ -280,13 +280,31 @@ if "comparables" not in st.session_state:
     st.session_state.comparables = [{"name":"","value":0.0,"source":"SEC EDGAR"} for _ in range(5)]
 
 def _reset_comp_widget_state():
-    """Clear per-row widget state (cn_i/cv_i/cs_i). Streamlit >=1.5x keeps keyed
-    widget state across reruns and ignores a changed value= default, so any
-    programmatic reorder/prune of st.session_state.comparables must clear these
-    keys — otherwise the stale widget values overwrite the new list on render."""
+    """Sync per-row widget state (cn_i/cv_i/cs_i) with st.session_state.comparables.
+
+    Historico: Streamlit >=1.5x passou a manter estado de widget com key entre
+    reruns, ignorando value= novo — o fix original DELETAVA as chaves antes do
+    rerun. No Streamlit 1.61 (rework react-aria dos widgets) a delecao deixou de
+    resetar: o estado interno do widget sobrevive e re-hidrata a chave, entao o
+    Auto Search dizia "5 comparaveis adicionados!" com a tabela visivelmente
+    vazia — EM PRODUCAO (descoberto 14/08/2026 na producao do manual do app).
+    O padrao que funciona nas versoes novas e ATRIBUIR os valores novos as
+    chaves (atribuicao programatica antes da instanciacao do widget e suportada
+    e vence o estado interno); as chaves alem do tamanho da lista sao removidas.
+    """
+    _comps = st.session_state.get("comparables", [])
+    for _i, _c in enumerate(_comps):
+        st.session_state[f"cn_{_i}"] = _c.get("name", "")
+        st.session_state[f"cv_{_i}"] = float(_c.get("value", 0.0))
+        st.session_state[f"cs_{_i}"] = _c.get("source", "SEC EDGAR")
     for _k in list(st.session_state.keys()):
         if isinstance(_k, str) and _k.startswith(("cn_", "cv_", "cs_")):
-            del st.session_state[_k]
+            try:
+                _idx = int(_k.split("_", 1)[1])
+            except (ValueError, IndexError):
+                continue
+            if _idx >= len(_comps):
+                del st.session_state[_k]
 
 # Language state (is_pt, _LANG_OPTS, _sync_lang) is established before the signup
 # gate above. _labels is defined after the gate, so the labels dict is built here.
