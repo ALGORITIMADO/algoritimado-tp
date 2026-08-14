@@ -967,3 +967,72 @@ def test_named_failures_survive_the_cache_boundary(monkeypatch):
     monkeypatch.setattr(ex, "_extract_cached", _falha)
     assert ex.extract_from_link("https://x/y.zip", email="a@algoritimado.com") == {
         "ok": False, "erro": "pdf_sem_texto"}
+
+
+# ── Exercício fiscal padrão ───────────────────────────────────────────────────
+# O app abria travado em 2024 enquanto o Arquivo Local vencendo em 31/10/2026
+# documenta o exercício 2025. O default agora sai do calendário de entrega.
+
+def test_default_year_is_2025_during_the_31_10_2026_season():
+    """Durante a temporada do Arquivo Local, o app tem que abrir em 2025."""
+    from datetime import date
+    from data.fiscal_calendar import latest_available_fiscal_year
+    assert latest_available_fiscal_year(date(2026, 8, 14)) == 2025
+    assert latest_available_fiscal_year(date(2026, 10, 31)) == 2025
+
+
+def test_year_only_advances_after_the_filing_deadline():
+    """Antes de maio o exercício anterior ainda não foi entregue — não usar."""
+    from datetime import date
+    from data.fiscal_calendar import latest_available_fiscal_year
+    assert latest_available_fiscal_year(date(2027, 1, 5)) == 2025
+    assert latest_available_fiscal_year(date(2027, 4, 30)) == 2025
+    assert latest_available_fiscal_year(date(2027, 5, 1)) == 2026
+    assert latest_available_fiscal_year(date(2027, 12, 31)) == 2026
+
+
+def test_default_never_falls_below_the_wired_floor():
+    from datetime import date
+    from data.fiscal_calendar import latest_available_fiscal_year, EARLIEST_FISCAL_YEAR
+    assert latest_available_fiscal_year(date(2010, 1, 1)) == EARLIEST_FISCAL_YEAR
+
+
+def test_fetchers_resolve_none_year_instead_of_requesting_none_zip(monkeypatch):
+    """year=None não pode virar dfp_cia_aberta_None.zip."""
+    import data.cvm_fetcher as cf
+    pedidos = []
+    class _Resp:
+        status_code = 404
+        content = b""
+    monkeypatch.setattr(cf.requests, "get",
+                        lambda url, **kw: pedidos.append(url) or _Resp())
+    cf.download_cvm_dre_v2.__wrapped__(None)
+    assert pedidos and "None" not in pedidos[0]
+    assert str(cf.latest_available_fiscal_year()) in pedidos[0]
+
+
+# ── Setor sem balde na CVM ────────────────────────────────────────────────────
+# O dropdown é a união de SIC_MAP (EDGAR) e CNAE_MAP (CVM). Setor presente só no
+# primeiro caía no ramo sem filtro e a CVM devolvia o começo alfabético do
+# cadastro como se fosse o setor pedido.
+
+def test_every_dropdown_sector_has_a_cvm_bucket():
+    from data.comparables_finder import ALL_INDUSTRIES
+    from data.cvm_fetcher import CNAE_MAP
+    sem_balde = [s for s in ALL_INDUSTRIES if s not in CNAE_MAP]
+    assert sem_balde == [], f"setor no dropdown sem balde na CVM: {sem_balde}"
+
+
+def test_unmapped_sector_returns_nothing_instead_of_the_alphabet(monkeypatch):
+    """Setor sem balde não pode devolver o cadastro inteiro como comparável."""
+    import pandas as pd
+    import data.cvm_fetcher as cf
+    falso = pd.DataFrame({
+        "DENOM_SOCIAL": ["AAA PARTICIPACOES SA", "BBB SANEAMENTO SA"],
+        "CNPJ_CIA": ["1", "2"], "CD_CVM": [1, 2], "SETOR_ATIV": ["Outros", "Outros"],
+    })
+    monkeypatch.setattr(cf, "get_cvm_company_list", lambda *a, **k: falso)
+    assert cf.search_companies_cvm(industry="Setor Que Nao Existe").empty
+    # mas busca por nome continua funcionando mesmo com setor sem balde
+    achou = cf.search_companies_cvm(industry="Setor Que Nao Existe", company_name="BBB")
+    assert len(achou) == 1

@@ -16,6 +16,12 @@ from data.edgar_fetcher import SIC_MAP
 from data.cvm_fetcher import CNAE_MAP, CVM_SECTOR_FALLBACK
 import data.cvm_pdf_extractor as cvm_pdf_extractor
 from data.comparables_finder import find_comparables, ALL_INDUSTRIES
+from data.fiscal_calendar import latest_available_fiscal_year, EARLIEST_FISCAL_YEAR
+
+# Exercise the app opens on. Derived from the filing calendar, never hardcoded:
+# the Arquivo Local due 31/10/2026 documents exercise 2025, and a stale default
+# would silently benchmark the visitor against the wrong year.
+LATEST_FY = latest_available_fiscal_year()
 
 st.set_page_config(page_title="Algoritimado — Transfer Pricing Platform",
                    page_icon="🌿", layout="wide",
@@ -364,7 +370,7 @@ with st.expander(f"📋 {'Dados da Transação' if is_pt else 'Transaction Data'
     with c1: company_name = st.text_input(L["company"], placeholder="Ex: Grupo ABC S.A.")
     with c2: transaction_desc = st.text_input(L["transaction"], placeholder="Ex: Venda de mercadorias para matriz")
     with c3: tested_party_name = st.text_input(L["tested_party"], placeholder="Ex: ABC Brasil Ltda")
-    with c4: fiscal_year = st.text_input(L["fiscal_year"], placeholder="2024", value="2024")
+    with c4: fiscal_year = st.text_input(L["fiscal_year"], placeholder=str(LATEST_FY), value=str(LATEST_FY))
 
 # ── ITEM I — IDENTIFICAÇÃO DAS PARTES RELACIONADAS (art. 61, I) ───────────────
 # Required content of the simplified Local File that the benchmark study alone
@@ -667,11 +673,11 @@ if not is_commodity:
                 )
                 # Same-year comparability: default the search year to the analysis
                 # fiscal year so they can't drift apart.
-                _def_year = int(fiscal_year) if str(fiscal_year).strip().isdigit() else 2024
-                _def_year = min(max(_def_year, 2015), 2025)
+                _def_year = int(fiscal_year) if str(fiscal_year).strip().isdigit() else LATEST_FY
+                _def_year = min(max(_def_year, EARLIEST_FISCAL_YEAR), LATEST_FY)
                 auto_year = st.number_input(
                     "Exercício / Fiscal Year",
-                    min_value=2015, max_value=2025, value=_def_year, step=1, key="auto_year",
+                    min_value=EARLIEST_FISCAL_YEAR, max_value=LATEST_FY, value=_def_year, step=1, key="auto_year",
                     help=("Os comparáveis virão deste exercício (SEC e CVM). Empresas sem "
                           "dado deste ano são excluídas — nunca se mistura ano." if is_pt else
                           "Comparables will come from this fiscal year (SEC and CVM). Companies "
@@ -1422,7 +1428,7 @@ if st.button(L["calc_btn"], width="stretch"):
                 company_name=company_name or "—",
                 transaction_description=transaction_desc or "—",
                 tested_party_name=tested_party_name or "—",
-                fiscal_year=fiscal_year or "2024",
+                fiscal_year=fiscal_year or str(LATEST_FY),
                 method=method.split("—")[0].strip(),
                 pli=pli_label_display,
                 analysis_date=datetime.now().strftime("%d/%m/%Y"),
@@ -1622,7 +1628,7 @@ if st.button(L["calc_btn"], width="stretch"):
                 company_name=company_name or "—",
                 transaction_description=transaction_desc or "—",
                 tested_party_name=tested_party_name or "—",
-                fiscal_year=fiscal_year or "2024",
+                fiscal_year=fiscal_year or str(LATEST_FY),
                 method=method.split("—")[0].strip(),
                 pli=pli_label_display,
                 analysis_date=datetime.now().strftime("%d/%m/%Y"),

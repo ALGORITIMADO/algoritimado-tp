@@ -3,6 +3,7 @@ import streamlit as st
 from typing import Optional, List
 from data.edgar_fetcher import fetch_comparables_edgar, SIC_MAP
 from data.cvm_fetcher import fetch_comparables_cvm, CNAE_MAP
+from data.fiscal_calendar import latest_available_fiscal_year
 
 # Unified industry list (all sectors from both sources)
 ALL_INDUSTRIES = sorted(set(list(SIC_MAP.keys()) + list(CNAE_MAP.keys())))
@@ -14,7 +15,7 @@ def find_comparables(
     company_name_edgar: Optional[str] = None,
     company_name_cvm: Optional[str] = None,
     sources: List[str] = ("SEC EDGAR", "CVM Brasil"),
-    year: int = 2024,
+    year: Optional[int] = None,
     limit: int = 15,
     pli: str = "operating_margin"
 ) -> pd.DataFrame:
@@ -22,6 +23,7 @@ def find_comparables(
     Search both EDGAR and CVM for comparables and merge results.
     `year` is the fiscal year both sources must return (same-year comparability).
     """
+    year = year or latest_available_fiscal_year()
     all_results = []
 
     if "SEC EDGAR" in sources:

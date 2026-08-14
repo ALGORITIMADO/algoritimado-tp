@@ -47,6 +47,13 @@ def _tickers_by_cik():
         return {}
 
 
+from data.fiscal_calendar import latest_available_fiscal_year
+
+# A auditoria seguia fixada em 2024 — auditava o ano errado justamente na
+# temporada em que o Arquivo Local documenta 2025.
+_LATEST = latest_available_fiscal_year()
+
+
 def audit_edgar(years, sector_filter=None):
     """Cada seed entrega margem operacional em algum dos anos pedidos?"""
     print(f"\n{'='*74}\nSEC EDGAR — seed list por setor (anos {', '.join(map(str, years))})\n{'='*74}")
@@ -120,9 +127,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--source", choices=["edgar", "cvm", "ambas"], default="ambas")
-    p.add_argument("--years", type=int, nargs="+", default=[2024, 2025],
+    p.add_argument("--years", type=int, nargs="+", default=[_LATEST - 1, _LATEST],
                    help="exercícios a testar no EDGAR (padrão: 2024 2025)")
-    p.add_argument("--cvm-year", type=int, default=2024,
+    p.add_argument("--cvm-year", type=int, default=_LATEST,
                    help="exercício da DFP a testar na CVM (padrão: 2024)")
     p.add_argument("--sector", help="filtra por trecho do nome do setor")
     args = p.parse_args()

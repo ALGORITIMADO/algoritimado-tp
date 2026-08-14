@@ -6,6 +6,8 @@ import unicodedata
 import zipfile
 from typing import Optional, List
 
+from data.fiscal_calendar import latest_available_fiscal_year
+
 CVM_BASE = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS"
 
 # CNAE sector map — sector name → keywords for filtering
@@ -35,6 +37,11 @@ CNAE_MAP = {
     "Energy / Energia":               ["ENERG", "ELETRIC", "SOLAR", "EOLICA"],
     "Mining / Mineração":             ["MINER", "EXTRATIV", "MINERIO", "CARBO"],
     "Logistics / Logística":          ["LOGIST", "TRANSPORT", "ARMAZ", "CARGA"],
+    # Telecom estava só no SIC_MAP (EDGAR) desde o commit original e nunca teve
+    # balde aqui. Como o dropdown é a união dos dois mapas, escolher Telecom caía
+    # no ramo "setor não mapeado" e a CVM devolvia o começo alfabético do cadastro
+    # como se fossem comparáveis do setor.
+    "Telecom / Telecomunicações":     ["TELECOM", "TELEFON", "COMUNICAC", "CELULAR"],
 }
 
 # DRE account codes (CVM standard). Verified 28/07/2026 against the filed DFP of
@@ -79,12 +86,13 @@ CVM_SECTOR_FALLBACK = {
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def download_cvm_dre_v2(year: int = 2024) -> Optional[pd.DataFrame]:
+def download_cvm_dre_v2(year: Optional[int] = None) -> Optional[pd.DataFrame]:
     """
     Download CVM DRE (Income Statement) data for a given year.
     CVM bundles every DFP statement (BPA/BPP/DRE/DFC/...) inside
     a single dfp_cia_aberta_{year}.zip — extract the consolidated DRE.
     """
+    year = year or latest_available_fiscal_year()
     url = f"{CVM_BASE}/dfp_cia_aberta_{year}.zip"
     try:
         resp = requests.get(url, timeout=60)
@@ -105,7 +113,7 @@ def download_cvm_dre_v2(year: int = 2024) -> Optional[pd.DataFrame]:
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def get_cvm_doc_links(year: int = 2024) -> dict:
+def get_cvm_doc_links(year: Optional[int] = None) -> dict:
     """Map CD_CVM -> official DFP document link for the year.
 
     The DFP zip's index file (dfp_cia_aberta_{year}.csv) carries a LINK_DOC column
@@ -114,6 +122,7 @@ def get_cvm_doc_links(year: int = 2024) -> dict:
     the RAD search form, it opens the actual filed document. Keeps the latest
     version per company.
     """
+    year = year or latest_available_fiscal_year()
     url = f"{CVM_BASE}/dfp_cia_aberta_{year}.zip"
     try:
         resp = requests.get(url, timeout=90)
@@ -177,7 +186,7 @@ def _only_active_companies(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def get_cvm_company_list(year: int = 2023) -> Optional[pd.DataFrame]:
+def get_cvm_company_list(year: Optional[int] = None) -> Optional[pd.DataFrame]:
     """Get list of CVM registered companies (active only) with sector info."""
     url = f"https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv"
     try:
@@ -222,7 +231,18 @@ def search_companies_cvm(
             _norm_label(company_name), regex=False, na=False)]
         nome_norm = nome_norm.loc[filtered.index]
 
-    if industry and industry in CNAE_MAP:
+    if industry and industry not in CNAE_MAP:
+        # The dropdown is the union of SIC_MAP and CNAE_MAP, so a sector can be
+        # offered while having no CVM keyword bucket. Falling through used to
+        # skip the filter entirely and hand back the alphabetical head of the
+        # registry — 45 unrelated companies presented as sector comparables.
+        # Silence is the wrong answer here, but a wrong answer is worse: with no
+        # bucket we cannot say anything about this sector, so return nothing and
+        # let the caller's "no companies found" notice do its job.
+        if not company_name:
+            return pd.DataFrame()
+
+    elif industry:
         keywords = CNAE_MAP[industry]
         sector_cols = [c for c in filtered.columns if any(k in c.upper()
                        for k in ["SETOR", "ATIVID", "CNAE", "DESCR"])]
@@ -363,7 +383,7 @@ def _pli_breakdown_cvm(m: dict, pli: str) -> Optional[dict]:
 def fetch_comparables_cvm(
     industry: Optional[str] = None,
     company_name: Optional[str] = None,
-    year: int = 2023,
+    year: Optional[int] = None,
     limit: int = 15,
     pli: str = "operating_margin"
 ) -> pd.DataFrame:
@@ -371,6 +391,7 @@ def fetch_comparables_cvm(
     Full CVM pipeline: search companies → download DRE → calculate margins.
     Returns ready-to-use comparables DataFrame.
     """
+    year = year or latest_available_fiscal_year()
     companies = search_companies_cvm(industry=industry, company_name=company_name,
                                       limit=limit * 3)
     if companies.empty:
