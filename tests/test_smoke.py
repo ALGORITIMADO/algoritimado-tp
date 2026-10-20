@@ -1071,3 +1071,12 @@ def test_app_logs_pli_key_not_default_operating_margin():
     src = open("app.py", encoding="utf-8").read()
     assert '"pli": pli_option,' not in src
     assert 'pli_key = "gross_markup"' in src and 'pli_key = "gross_margin"' in src
+
+
+def test_app_warns_on_mixed_sectors_and_foreign_comparables():
+    """Amostra com setores misturados e comparáveis da SEC fora do MLT/margem
+    operacional geram aviso (o caso real de 20/10: MCL, Logística + Agro, SEC)."""
+    src = open("app.py", encoding="utf-8").read()
+    assert 'new_comp["sector"] = _sector' in src
+    assert "A amostra mistura setores" in src
+    assert "Comparáveis estrangeiros (SEC EDGAR) na amostra" in src

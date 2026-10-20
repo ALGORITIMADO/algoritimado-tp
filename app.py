@@ -830,6 +830,9 @@ if not is_commodity:
                     else:
                         st.session_state["auto_results"] = results_df
                         st.session_state["auto_results_pli_label"] = pli_label_display
+                        # Sector of this search rides along with each added row, so the
+                        # comparable table can warn when the set mixes sectors.
+                        st.session_state["auto_results_industry"] = auto_industry or ""
                         st.success(
                             f"✅ {len(results_df)} comparáveis encontrados!" if is_pt
                             else f"✅ {len(results_df)} comparables found!"
@@ -949,6 +952,9 @@ if not is_commodity:
                             # rides along too, when present (SEC rows only today).
                             if isinstance(_bd, dict):
                                 new_comp["breakdown"] = _bd
+                            _sector = st.session_state.get("auto_results_industry", "")
+                            if _sector:
+                                new_comp["sector"] = _sector
                             # capital employed (PP&E + working capital, same filing)
                             # enables the Anexo II country-risk adjustment (SEC only).
                             _ce = row.get("capital_employed", None)
@@ -1021,6 +1027,31 @@ if not is_commodity:
             st.session_state.comparables = [c for c in st.session_state.comparables if c["value"] != 0.0 or c["name"].strip() != ""]
             _reset_comp_widget_state()
             st.rerun()
+
+    # ── Aviso: amostra que mistura setores do Auto Search ────────────────────
+    # Two Auto Search runs on different sectors (e.g. Logistics + Agriculture)
+    # land in one set without any signal. Sector is not function: the app can't
+    # judge comparability, but it can say the set needs a functional screen.
+    _sectors = sorted({c["sector"] for c in st.session_state.comparables
+                       if c.get("sector") and (c["value"] != 0.0 or c["name"].strip())})
+    if len(_sectors) > 1:
+        _sec_list = ", ".join(f"**{x}**" for x in _sectors)
+        st.warning(
+            (f"⚠️ **A amostra mistura setores:** {_sec_list}. Setor não é função. "
+             "Comparável válido é o que exerce funções, usa ativos e assume riscos "
+             "semelhantes aos da parte testada (análise FAR, arts. 13 e 14 da IN RFB "
+             "2.161/2023). Uma trading de commodities, por exemplo, não é comparável "
+             "a um prestador de serviço de logística só porque atua no mesmo mercado. "
+             "Antes de gerar o laudo, confira cada empresa e exclua as de função "
+             "diferente — e registre o critério de exclusão no documento.")
+            if is_pt else
+            (f"⚠️ **The set mixes sectors:** {_sec_list}. Sector is not function. "
+             "A valid comparable performs similar functions, uses similar assets and "
+             "assumes similar risks to the tested party (FAR analysis, arts. 13–14 of "
+             "IN RFB 2.161/2023). A commodity trader, for instance, is not comparable "
+             "to a logistics service provider just because they serve the same market. "
+             "Before generating the report, review each company, exclude those with a "
+             "different function — and record the exclusion criteria in the report."))
 
     # ── Rastreabilidade CVM: extrai a DRE do PDF protocolado, com a página ────
     # Sob demanda, nunca automático: cada rodada tem custo no Bedrock e a maioria
@@ -1278,6 +1309,27 @@ if "MLT" in method and pli_option == "operating_margin":
              "excluding them (art. 32, IV). CVM comparables are domestic and are not "
              "adjusted.")
         )
+elif any("SEC" in str(c.get("source", "")).upper() and (c["value"] != 0.0 or c["name"].strip())
+         for c in st.session_state.comparables):
+    # Other methods/PLIs with foreign comparables: the adjustment still applies in
+    # principle (art. 32, §2º, VI), there's just no official worked mechanic to
+    # automate. Remind instead of staying silent.
+    st.info(
+        ("🌍 **Comparáveis estrangeiros (SEC EDGAR) na amostra.** A IN RFB 2.161/2023 "
+         "trata a diferença de risco-país como ajuste de comparabilidade de qualquer "
+         "método (art. 32, §2º, VI). O app automatiza só a mecânica do Anexo II, que é "
+         "a do MLT com margem operacional. Neste método/indicador, avalie e documente "
+         "no laudo se a diferença de risco-país entre o Brasil e o país dos comparáveis "
+         "é material e, se for, como foi tratada — ajuste manual justificado, ou a "
+         "preferência por comparáveis brasileiros (CVM).")
+        if is_pt else
+        ("🌍 **Foreign comparables (SEC EDGAR) in the set.** IN RFB 2.161/2023 treats "
+         "the country-risk difference as a comparability adjustment for any method "
+         "(art. 32, §2º, VI). The app only automates the Annex II mechanic, which is "
+         "the TNMM operating-margin one. For this method/indicator, assess and document "
+         "in the report whether the country-risk difference between Brazil and the "
+         "comparables' country is material and, if so, how it was handled — a "
+         "justified manual adjustment, or preferring Brazilian (CVM) comparables."))
 
 # ── PIC COMMODITIES + RTC (Art. 37–38) ──────────────────────────────────────
 # Commodity CUP: arm's-length value = quotation on the pricing date ± adjustments
