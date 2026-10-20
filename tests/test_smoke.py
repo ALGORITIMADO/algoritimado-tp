@@ -1051,3 +1051,23 @@ def test_edgar_fails_closed_on_unmapped_sector():
     """O EDGAR já falhava fechado; travar isso pra não regredir pro modo CVM."""
     from data.edgar_fetcher import fetch_comparables_edgar
     assert fetch_comparables_edgar(industry="Setor Que Nao Existe", limit=5).empty
+
+
+
+def test_mcl_markup_converts_back_to_gross_margin_for_cvm_cross_check():
+    """MCL guarda markup bruto; a conferência com o PDF da CVM usa margem bruta.
+    Markup de 25% (lucro 25 sobre custo 100) = margem bruta de 20% (25 sobre 125)."""
+    from data.cvm_pdf_extractor import markup_to_gross_margin, cross_check
+    assert markup_to_gross_margin(25.0) == 20.0
+    assert markup_to_gross_margin(None) is None
+    ext = {"margens": {"margem_bruta_pct": 20.0, "margem_operacional_pct": 8.0}}
+    assert cross_check(ext, markup_to_gross_margin(25.0), "gross_margin")["status"] == "confere"
+    # sem a conversão, o markup cru seria comparado com a margem bruta e divergiria
+    assert cross_check(ext, 25.0, "gross_margin")["status"] == "divergente"
+
+
+def test_app_logs_pli_key_not_default_operating_margin():
+    """O log de eventos tem de gravar o PLI usado de fato (pli_key), não o default."""
+    src = open("app.py", encoding="utf-8").read()
+    assert '"pli": pli_option,' not in src
+    assert 'pli_key = "gross_markup"' in src and 'pli_key = "gross_margin"' in src

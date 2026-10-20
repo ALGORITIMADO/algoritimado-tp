@@ -581,6 +581,19 @@ elif "MCL" in method:
             f"{L['cost_base']} ({currency})",
             value=100.0, step=0.01, min_value=0.01, key="mcl_cost")
 
+
+# Chave canônica do PLI para log e para a conferência com o PDF da CVM.
+# pli_option só é escolhido pelo usuário no MLT; em PRL/MCL/PIC ele ficava no
+# default "operating_margin" e o log gravava um indicador que não foi usado.
+if "MCL" in method:
+    pli_key = "gross_markup"
+elif "PRL" in method:
+    pli_key = "gross_margin"
+elif any(x in method for x in ["PIC", "PCI", "PECEX"]):
+    pli_key = "price"
+else:
+    pli_key = pli_option
+
 # ── LEVEL 2: AUTO SEARCH ─────────────────────────────────────────────────────
 # Commodity PIC (art. 37) tests a single quotation ± adjustments, not a set of
 # comparables, so neither Auto Search nor the comparables table apply to it.
@@ -1096,10 +1109,18 @@ if not is_commodity:
                                  + " Nada foi alterado na tabela.")
                     else:
                         _d = _res["dados"]
+                        # PRL e MCL são testados na margem/markup BRUTO: a citação e a
+                        # conferência têm de olhar o lucro bruto do PDF. No MCL a tabela
+                        # guarda markup (lucro bruto ÷ custo); converte de volta para
+                        # margem bruta antes de comparar com o PDF.
+                        _pli_ext = "gross_margin" if pli_key in ("gross_margin", "gross_markup") else pli_option
+                        _val_ext = _comp.get("value")
+                        if pli_key == "gross_markup":
+                            _val_ext = cvm_pdf_extractor.markup_to_gross_margin(_val_ext)
                         _cit = cvm_pdf_extractor.citation_text(
-                            _d, pli_option, "pt" if is_pt else "en")
+                            _d, _pli_ext, "pt" if is_pt else "en")
                         _chk = cvm_pdf_extractor.cross_check(
-                            _d, _comp.get("value"), pli_option)
+                            _d, _val_ext, _pli_ext)
                         # A citação fica NO comparável: é ela que vai para o laudo.
                         st.session_state.comparables[_idx]["pdf_citation"] = _cit
                         st.session_state.comparables[_idx]["pdf_extraction"] = _d
@@ -1111,7 +1132,7 @@ if not is_commodity:
                             "empresa": _d.get("empresa") or _comp.get("name"),
                             "exercicio": _d.get("exercicio"),
                             "paginas_pdf": _res.get("paginas"),
-                            "pli": pli_option,
+                            "pli": pli_key,
                             "pagina_citada": (_d.get("itens") or {}).get(
                                 "resultado_operacional", {}).get("pagina"),
                             "cross_check": _chk.get("status"),
@@ -1680,7 +1701,7 @@ if st.button(L["calc_btn"], width="stretch"):
                 commodity_pic=commodity_pic)
             _event_payload = {
                 "method": method.split("—")[0].strip(),
-                "pli": pli_option,
+                "pli": pli_key,
                 "n_comparables": len(valid_comps),
             }
             if any(x in method for x in ["PRL", "MCL"]):
@@ -1957,7 +1978,7 @@ if "iqr_result" in st.session_state:
             slug = (meta.get("company_name") or "analysis").replace(" ","-").lower()
             _log_event("pdf_generated", {
                 "method": method.split("—")[0].strip(),
-                "pli": pli_option,
+                "pli": pli_key,
                 "company": meta.get("company_name", ""),
             })
             st.download_button(label=L["download_pdf"], data=pdf_bytes,

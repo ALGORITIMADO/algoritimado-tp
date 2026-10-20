@@ -280,6 +280,20 @@ def normalize_extraction(data: dict) -> Optional[dict]:
     }
 
 
+def markup_to_gross_margin(markup_pct: Optional[float]) -> Optional[float]:
+    """Markup bruto (lucro bruto ÷ custo) → margem bruta (lucro bruto ÷ receita), em %.
+
+    No MCL a tabela de comparáveis guarda markup; o PDF da CVM dá margem bruta.
+    Sem converter, a conferência compararia grandezas diferentes."""
+    if markup_pct is None:
+        return None
+    try:
+        mk = float(markup_pct)
+        return round(mk / (100 + mk) * 100, 4)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
 def cross_check(extracted: dict, structured_margin: Optional[float],
                 pli: str = "operating_margin") -> dict:
     """Confronta a margem do PDF com a do dado estruturado da mesma empresa.
