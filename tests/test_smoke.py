@@ -1047,6 +1047,21 @@ def test_unmapped_sector_returns_nothing_instead_of_the_alphabet(monkeypatch):
     assert len(achou) == 1
 
 
+def test_no_sector_no_name_returns_nothing(monkeypatch):
+    """Sem setor e sem nome (ex.: nome digitado só no campo da SEC), a CVM não pode
+    devolver o começo do cadastro em ordem alfabética como se fosse resultado."""
+    import pandas as pd
+    import data.cvm_fetcher as cf
+    falso = pd.DataFrame({
+        "DENOM_SOCIAL": ["AAA PARTICIPACOES SA", "BBB SANEAMENTO SA"],
+        "CNPJ_CIA": ["1", "2"], "CD_CVM": [1, 2], "SETOR_ATIV": ["Outros", "Outros"],
+    })
+    monkeypatch.setattr(cf, "get_cvm_company_list", lambda *a, **k: falso)
+    assert cf.search_companies_cvm().empty
+    assert cf.search_companies_cvm(industry=None, company_name="").empty
+    assert len(cf.search_companies_cvm(company_name="AAA")) == 1
+
+
 def test_edgar_fails_closed_on_unmapped_sector():
     """O EDGAR já falhava fechado; travar isso pra não regredir pro modo CVM."""
     from data.edgar_fetcher import fetch_comparables_edgar

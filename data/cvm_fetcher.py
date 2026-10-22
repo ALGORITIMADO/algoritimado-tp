@@ -218,6 +218,14 @@ def search_companies_cvm(
     if not name_col:
         return pd.DataFrame()
 
+    # 22/10/2026: with no sector, no name and no CNPJ there is nothing to filter on,
+    # and the code below used to hand back the alphabetical head of the registry.
+    # A user who typed a name only in the SEC field (e.g. "Unipar") saw 14 unrelated
+    # Brazilian companies as if they were the results of her search. No criterion
+    # means no comparables.
+    if not industry and not company_name:
+        return pd.DataFrame()
+
     filtered = cad.copy()
 
     # Accent-insensitive matching on BOTH sides. The CVM's own sector vocabulary is
